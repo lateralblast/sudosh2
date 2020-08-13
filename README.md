@@ -16,3 +16,13 @@ sudosh2 is generally in maintenance mode. I'll accept portability issues and sim
 
 sudosh2 is under the Open Source License 2.0 (which is very similar to BSD with Attribution), a copy of wihch is in the COPYING file. This is the license chosen by the original author.
 
+Creating an Ubuntu/Debian Package:
+
+```
+cd sudosh2
+sudo apt install devscripts debhelper
+sudo debuild -b -uc -us
+ls -l ../*.deb
+ls -l ../*.deb
+-rw-r--r-- 1 root root 30628 Aug 13 15:24 ../sudosh2_2.0.1-1_amd64.deb
+```
