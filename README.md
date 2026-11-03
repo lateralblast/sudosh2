@@ -1,5 +1,5 @@
 # sudosh2
-Version: 1.8.1
+Version: 1.8.2
 
 sudosh2 is an auditing layer between sudo and a user's shell, that can also be used as a login shell.
 
@@ -45,3 +45,10 @@ Letting users run scp, sftp or rsync through sudosh with `-c arg allow` only che
 - `build-test/regress.sh` builds a copy of the tree and runs the regression suite. It runs on Linux and FreeBSD (the `LD_PRELOAD` tests are Linux only).
 - `build-test/bsd-test.sh` runs that suite on FreeBSD in a throwaway QEMU virtual machine, so you can test BSD from a Linux machine. It downloads an official FreeBSD VM image once (about 650 MB, checked against FreeBSD's published SHA256), boots a copy of it, copies the source in, runs the tests as an ordinary user, and deletes the copy. It needs `qemu-system-x86_64`, `qemu-img`, `xz`, `curl`, `ssh` and `genisoimage` (or `mkisofs` or `xorriso`), and `/dev/kvm` to be fast. Run `build-test/bsd-test.sh --help` for the commands (`test`, `start`, `sync`, `ssh`, `stop`, `clean`) and options.
 
+## Continuing the work
+
+- `TODO.md` lists what is open. `RESEARCH.md` records design options already weighed (notably the `-c arg allow` argument restriction), so they are not argued again.
+- Every fix or closed TODO item bumps the version and gets a dated `CHANGELOG.md` entry; run `build-test/check-version.sh` to check the versions agree.
+- Before finishing a change run `build-test/regress.sh` (about 56 checks on Linux); run `build-test/bsd-test.sh` for FreeBSD (42 checks). Last verified at 1.8.1: Linux, an Ubuntu 24.04 container (CI emulation), AddressSanitizer/UBSan, a strict `-std=c17 -O2 -Werror` build and FreeBSD 14.5 all pass.
+- Platform notes: `regress.sh` must stay portable (no GNU-only `stat`, `date +%s%N`, `/proc`); FreeBSD's default `~/.profile` runs `resizewin`, which `bsd-test.sh` empties; the `LD_PRELOAD` tests are glibc-only.
+- `bsd-test.sh` keeps its image in `~/.cache/sudosh2-bsd` (`build-test/bsd-test.sh clean` removes it).

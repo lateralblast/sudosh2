@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-11-03
+
+### Changed
+
+- Added `RESEARCH.md` (the `-c arg allow` design options and the BSD-in-CI idea) and a "Continuing the work" section in `README.md`; `TODO.md` now points at them. The work was committed in 1.8.1.
+
 ## [1.8.1] - 2026-11-03
 
 ### Added
