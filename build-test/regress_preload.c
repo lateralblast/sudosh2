@@ -12,8 +12,11 @@
  *   REGRESS_EXECL_FAIL   execl() and execve() fail with ENOENT
  *   REGRESS_FROZEN_CLOCK gettimeofday() and getpid() always return the same values
  *   REGRESS_PTSNAME_FAIL ptsname() returns NULL
+ *   REGRESS_NULL_SHELL   the current user's passwd entry has no shell
+ *   REGRESS_SIGNED_SPACE isspace() and friends treat negative arguments as white space
  */
 #define _GNU_SOURCE
+#include <ctype.h>
 #include <dlfcn.h>
 #include <errno.h>
 #include <sys/time.h>
@@ -63,6 +66,16 @@ struct passwd *getpwuid(uid_t uid)
   }
   if (!real)
     real = (struct passwd *(*)(uid_t))dlsym(RTLD_NEXT, "getpwuid");
+  if (getenv("REGRESS_NULL_SHELL") && uid == getuid()) {
+    static struct passwd copy;
+    struct passwd *p = real(uid);
+
+    if (p) {
+      copy = *p;
+      copy.pw_shell = NULL;
+      return &copy;
+    }
+  }
   return real(uid);
 }
 
@@ -238,4 +251,30 @@ int execve(const char *path, char *const argv[], char *const envp[])
   if (!real)
     real = (int (*)(const char *, char *const[], char *const[]))dlsym(RTLD_NEXT, "execve");
   return real(path, argv, envp);
+}
+
+/* The ctype macros index a table with the character value. A plain char above
+ * 127 is negative, so a program that forgets the cast to unsigned char reads
+ * the negative half of the table. Make that half say "white space". */
+const unsigned short **__ctype_b_loc(void)
+{
+  static const unsigned short **(*real)(void);
+  static unsigned short fake[384];
+  static const unsigned short *fake_base;
+  const unsigned short **r;
+  int i;
+
+  if (!real)
+    real = (const unsigned short **(*)(void))dlsym(RTLD_NEXT, "__ctype_b_loc");
+  r = real();
+  if (!getenv("REGRESS_SIGNED_SPACE"))
+    return r;
+  if (!fake_base) {
+    for (i = -128; i < 256; i++)
+      fake[i + 128] = (*r)[i];
+    for (i = -128; i < 0; i++)
+      fake[i + 128] |= _ISspace;
+    fake_base = fake + 128;
+  }
+  return &fake_base;
 }

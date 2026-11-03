@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+## [1.7.7] - 2026-11-03
+
+### Changed
+
+- Regression tests cover the raw-mode `VMIN` setting, the refusal when no shell can be found, and the unsigned-character cast before `isspace`. The `VMIN` test also showed that the 1.5.7 entry was wrong to call `VEOF` and `VMIN` the same setting on Linux; that entry is corrected.
+
 ## [1.7.6] - 2026-11-03
 
 ### Changed
@@ -124,7 +130,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ### Fixed
 
-- The terminal is put in raw mode by setting `VMIN` and `VTIME`. It set `VEOF`, which is the same setting on Linux but not on BSD, where reads could return nothing and end the session at once.
+- The terminal is put in raw mode by setting `VMIN` and `VTIME`. The old code set `VEOF`, which is a different setting on Linux and BSD, so `VMIN` stayed 0 and a read could return nothing. (Corrected in 1.7.7: this entry first said the two were the same setting on Linux.)
 
 ## [1.5.6] - 2026-11-03
 

@@ -9,6 +9,7 @@ Status: `[ ]` open, `[~]` in progress, `[x]` done.
 
 ## Done
 
+- [x] Add automated tests for the small fixes that had none: `VMIN` in raw mode, the NULL-shell guard, and the `isspace` unsigned-char cast. (1.7.7)
 - [x] Document the recommended way to allow file transfer: `internal-sftp` with `ChrootDirectory` and `ForceCommand`, `rrsync` for rsync, or `command=` in `authorized_keys`, instead of allowing scp or rsync with `-c arg allow`. (1.7.6)
 - [x] `sudosh -c` runs `/bin/sh -c` with the caller's whole environment (`PATH`, `LD_PRELOAD`, `BASH_ENV` and so on); honour `clearenvironment` and use a fixed `PATH`, as interactive sessions do. (1.7.5)
 - [x] `sudosh -c` does not log to syslog: record every `-c` command, allowed or refused, when `syslog.priority` is set. Refusals only print to stderr today. (1.7.4)
@@ -28,7 +29,7 @@ Status: `[ ]` open, `[~]` in progress, `[x]` done.
 - [x] `parse.c` passes a signed `char` to `isspace()`. (1.6.0)
 - [x] The "not in /etc/shells" `mysyslog` call is missing the `priority != -1` guard. (1.5.9)
 - [x] A NULL `pw_shell` would crash `strcmp` in the shell check. (1.5.8)
-- [x] `rawmode()` sets `c_cc[VEOF]` instead of `c_cc[VMIN]`, which could end the session at once on BSD. (1.5.7)
+- [x] `rawmode()` sets `c_cc[VEOF]` instead of `c_cc[VMIN]`, so `VMIN` stays 0 (a read can return nothing). (1.5.7)
 - [x] Log file names use `(int)` time, so timestamps wrap negative after 2038-01-19 and replay cannot parse the names. (1.5.6)
 - [x] A failed `exec` in the `-c` path exits 0 with no message. (1.5.5)
 - [x] Inline `#` comments on a `sudosh.conf` line become part of the value. (1.5.4)

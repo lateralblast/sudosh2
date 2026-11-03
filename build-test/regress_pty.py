@@ -12,7 +12,7 @@ MODE is one of:
   timing   run "sleep 2; echo done; exit"
   envshow  print the FOO and USER variables the session shell sees
   fds      print the file descriptors the session shell holds open
-  rawmode  print RAW=1 if sudosh put its terminal in raw mode
+  rawmode  print RAW=1 if sudosh put its terminal in raw mode (VMIN 1, VTIME 0)
   banner   print the first start-up message that mentions the delimiter
   emptyc   run "sudosh -c ''" with no input
   wait     run sudosh with no input
@@ -21,6 +21,7 @@ Prints one line: EXITED <status>, SIGNAL <number>, or ALIVE. sudosh is killed
 afterwards if it is still running. The envshow and fds modes then print one
 more line of the form NAME=value.
 
+REGRESS_SHELL sets the SHELL the child sees; the value "unset" removes it.
 The child gets LD_PRELOAD from REGRESS_PRELOAD when that is set. It is set only
 for the child, so this driver itself is never preloaded.
 """
@@ -53,7 +54,12 @@ PROBE = {}
 
 def run(argv, keys=(), sig=None, lead=0.5, hook=None):
     """Run argv in a pty. Returns (status line, captured output text)."""
-    env = dict(os.environ, SHELL=os.environ.get("REGRESS_SHELL", "/bin/sh"), TERM="dumb")
+    env = dict(os.environ, TERM="dumb")
+    shell = os.environ.get("REGRESS_SHELL", "/bin/sh")
+    if shell == "unset":
+        env.pop("SHELL", None)
+    else:
+        env["SHELL"] = shell
     if os.environ.get("REGRESS_PRELOAD"):
         env["LD_PRELOAD"] = os.environ["REGRESS_PRELOAD"]
     pid, fd = pty.fork()
@@ -123,8 +129,16 @@ def main():
         print("FDS=" + marker(text, "FDLIST"))
     elif mode == "rawmode":
         def check_raw(fd):
-            lflag = termios.tcgetattr(fd)[3]
-            PROBE["raw"] = int(not (lflag & (termios.ICANON | termios.ECHO | termios.ISIG)))
+            attrs = termios.tcgetattr(fd)
+            lflag, cc = attrs[3], attrs[6]
+
+            def num(v):
+                return v if isinstance(v, int) else ord(v)
+
+            # Raw mode: no line editing, echo or signals, and a read waits for
+            # at least one byte (VMIN 1, VTIME 0).
+            PROBE["raw"] = int(not (lflag & (termios.ICANON | termios.ECHO | termios.ISIG))
+                               and num(cc[termios.VMIN]) == 1 and num(cc[termios.VTIME]) == 0)
 
         print(run(argv, keys=[b"exit\r"], hook=check_raw)[0])
         print("RAW=%d" % PROBE.get("raw", 0))

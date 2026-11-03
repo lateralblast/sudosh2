@@ -132,9 +132,9 @@ echo "=== terminal modes (pty)"
 reset_logs
 raw=$(python3 "$PTY" rawmode "$SUDOSH" | sed -n 's/^RAW=//p')
 if [ "$raw" = 1 ]; then
-    pass "sudosh puts its terminal in raw mode for the session"
+    pass "sudosh puts its terminal in raw mode (VMIN 1) for the session"
 else
-    fail "sudosh puts its terminal in raw mode for the session (RAW=$raw)"
+    fail "sudosh puts its terminal in raw mode (VMIN 1) for the session (RAW=$raw)"
 fi
 
 echo "=== session environment (pty)"
@@ -320,6 +320,24 @@ else
         pass "an invalid shell is refused without logging when syslog is not configured"
     else
         fail "an invalid shell is refused without logging when syslog is not configured (got $out, log: $(cat "$T/syslog.log" 2>/dev/null))"
+    fi
+
+    reset_logs
+    out=$(REGRESS_PRELOAD="$PRELOAD" REGRESS_NULL_SHELL=1 REGRESS_SHELL=unset python3 "$PTY" wait "$SUDOSH")
+    if [ "$out" = "EXITED 1" ]; then
+        pass "no shell in the environment or the passwd entry is refused, not a crash"
+    else
+        fail "no shell in the environment or the passwd entry is refused, not a crash (got $out)"
+    fi
+
+    rm -rf "$T/caf"* 
+    odd_dir="$T/$(printf 'caf\351x')"
+    write_conf "$odd_dir"
+    LD_PRELOAD="$PRELOAD" REGRESS_SIGNED_SPACE=1 "$REPLAY" >/dev/null 2>&1
+    if [ -d "$odd_dir" ] && [ ! -d "$T/cafx" ]; then
+        pass "a byte above 127 in sudosh.conf is not mistaken for white space"
+    else
+        fail "a byte above 127 in sudosh.conf is not mistaken for white space ($(ls "$T" | grep caf | tr '\n' ' '))"
     fi
 
     reset_logs
