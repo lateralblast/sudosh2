@@ -4,7 +4,7 @@ Status: `[ ]` open, `[~]` in progress, `[x]` done.
 
 ## Open
 
-- [ ] Decide whether `-c arg allow` should restrict arguments and not just the command name. The limit is documented in the man pages; the behaviour is unchanged and needs a design decision.
+- [ ] Decide whether `-c arg allow` should restrict arguments and not just the command name. Today a user can pass any arguments to an allowed program (apart from shell metacharacters), so `find -fprint`, `rsync -e` or `scp -S` can run programs or write files. The limit is documented in the man pages; behaviour is unchanged. Options to choose from: (a) keep the current behaviour and the documented warning; (b) allow whole command lines, so `-c arg allow = scp -t` matches only that exact form; (c) allow a command plus a list of permitted options; (d) run the command without `/bin/sh -c`, splitting it into arguments ourselves, so quoting cannot hide anything. Any of (b) to (d) changes the `sudosh.conf` format and needs a decision on compatibility with existing configs and with the scp/sftp/rsync server commands that clients send.
 - [ ] Commit the work (the user makes commits). Make sure `build-test/*.sh` and `build-test/regress_pty.py` are committed with their executable bits.
 
 ## Done
