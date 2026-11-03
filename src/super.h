@@ -18,14 +18,6 @@ PURPOSE.  See the Open Software License for details.
 
 #include "config.h"
 
-#ifdef __STRICT_ANSI__
-#ifdef HAVE_FEATURES_H
-#include <features.h>
-#endif				/* HAVE_FEATURES */
-#define __USE_POSIX
-#define __USE_BSD
-#define __USE_MISC
-#endif				/* __STRICT_ANSI__ */
 #ifdef HAVE_STDIO_H
 #include <stdio.h>
 #endif				/* HAVE_STDIO_H */

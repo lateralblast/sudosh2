@@ -5,6 +5,18 @@ extern void parse(option *, const char *);
 extern void mklogdir(char *logdir);
 extern void validateLogdir(char *logdir);
 
+/* Append C to the string S, which has room for SIZE bytes including the
+ * terminating NUL. Characters that do not fit are dropped. */
+static void append_char(char *s, size_t size, char c)
+{
+	size_t len = strlen(s);
+
+	if (len + 1 < size) {
+		s[len] = c;
+		s[len + 1] = '\0';
+	}
+}
+
 void parse(option *c, const char *file)
 {
 	FILE *f;
@@ -61,9 +73,9 @@ void parse(option *c, const char *file)
 				}
 
 				if (leftside)
-					strncat(key, &line[x], 1);
+					append_char(key, sizeof(key), line[x]);
 				else
-					strncat(value, &line[x], 1);
+					append_char(value, sizeof(value), line[x]);
 			}
 		//      fprintf(stderr, "Parsed key [%s] and value [%s]\n",key, value);
 

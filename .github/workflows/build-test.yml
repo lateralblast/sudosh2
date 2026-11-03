@@ -107,3 +107,10 @@ jobs:
 
       - name: Run regression tests
         run: build-test/regress.sh
+
+      - name: Strict ISO build (c17, -O2)
+        run: |
+          autoreconf -fi
+          ./configure
+          make clean
+          make CFLAGS='-Wall -Werror -pedantic -Werror=implicit-function-declaration -Werror=int-conversion -std=c17 -O2'

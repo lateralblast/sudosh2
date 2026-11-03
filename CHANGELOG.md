@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-11-03
+
+### Fixed
+
+- sudosh builds in strict ISO mode (`-std=c17 -O2` with `-Werror`). The POSIX/BSD interfaces are requested with `_DEFAULT_SOURCE` in `src/Makefile.am`, the old `__USE_*` workaround in `super.h` is removed, and `parse.c` no longer triggers a truncation warning.
+
 ## [1.3.1] - 2026-11-03
 
 ### Fixed
