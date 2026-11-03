@@ -1,5 +1,5 @@
 # sudosh2
-Version: 1.4.0
+Version: 1.4.2
 
 sudosh2 is an auditing layer between sudo and a user's shell, that can also be used as a login shell.
 

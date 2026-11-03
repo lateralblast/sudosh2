@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-11-03
+
+### Changed
+
+- The 1.0.7 release date is the `v1.0.7` tag date, 2019-07-16. The 2015 date in the old ChangeLog is not used.
+
+## [1.4.1] - 2026-11-03
+
+### Changed
+
+- `debian/changelog` is archived and no longer maintained. It still describes an old 2.0.1 package and is not updated for this release.
+
 ## [1.4.0] - 2026-11-03
 
 ### Changed

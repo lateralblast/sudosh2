@@ -4,12 +4,12 @@ Status: `[ ]` open, `[~]` in progress, `[x]` done.
 
 ## Open
 
-- [ ] Update `debian/changelog`, which still says 2.0.1 and is unrelated to the project version.
-- [ ] Confirm the release date of 1.0.7. The old ChangeLog says 2015-04-29, the `v1.0.7` tag says 2019-07-16. CHANGELOG.md uses the tag date.
 - [ ] Commit the work (the user makes commits). Make sure `build-test/*.sh` and `build-test/regress_pty.py` are committed with their executable bits.
 
 ## Done
 
+- [x] 1.0.7 release date dealt with: the `v1.0.7` tag date (2019-07-16) is used; the 2015 date in the old ChangeLog is not (1.4.2).
+- [x] `debian/changelog` archived; not maintained for this release (1.4.1).
 - [x] Low-priority review findings fixed (1.3.6–1.4.0): `ispunct` on an unsigned char, newline on the replay `invalid float` messages (1.3.7), `read(0)` retried on EINTR (1.3.8), `-c` interactive log created with `O_EXCL` (1.3.9), redundant `c_str` check removed (1.4.0). No automated tests yet for these five.
 - [x] Man pages updated: `sudosh.1.in` documents `-c` and its restrictions, `sudosh.conf.5.in` documents the 1733 log directory and the `-cargallow` size limit (1.3.5).
 - [x] Regenerated `configure` and `Makefile.in` with `autoreconf -fi` (1.3.4).
