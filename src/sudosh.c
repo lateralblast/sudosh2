@@ -202,63 +202,65 @@ int main(int argc, char *argv[], char *environ[]) {
         fprintf(stderr, "\"%s\" isn't allowed to be executed.\n", c_command);
         exit(EXIT_FAILURE);
       }
-      if (c_str[0] != 0) {
-        // Test for methods of escape
-        /* The whole command line is run by /bin/sh -c, so any shell
-         * metacharacter (including command substitution and newlines) would
-         * let an allowed first word run arbitrary commands. */
-        if (strchr(sudosh_option.argallow, '*') == NULL &&
-            strpbrk(c_command, ";&|<>`$()\n\r") != NULL) {
-          fprintf(stderr,
-                  "\"%s\" isn't allowed to be executed with process or "
-                  "redirect controls.\n",
-                  c_command);
+      // Test for methods of escape
+      /* The whole command line is run by /bin/sh -c, so any shell
+       * metacharacter (including command substitution and newlines) would
+       * let an allowed first word run arbitrary commands. */
+      if (strchr(sudosh_option.argallow, '*') == NULL &&
+          strpbrk(c_command, ";&|<>`$()\n\r") != NULL) {
+        fprintf(stderr,
+                "\"%s\" isn't allowed to be executed with process or "
+                "redirect controls.\n",
+                c_command);
+        exit(EXIT_FAILURE);
+      }
+
+      //              fprintf(stderr,"Testing c\n");
+      // Make sure that c_str is in argallow
+
+      /* A word too long to fit is refused outright; truncating it could
+       * match an allow-list entry that is only a prefix of the word. */
+      allowed = 0;
+      if (strlen(c_str) <= sizeof(argtest) - 3) {
+        size_t n = strlen(c_str);
+        argtest[0] = '$';
+        memcpy(argtest + 1, c_str, n);
+        argtest[n + 1] = '$';
+        argtest[n + 2] = '\0';
+        allowed = strstr(sudosh_option.argallow, argtest) != NULL;
+      }
+
+      if (allowed ||
+          strchr(sudosh_option.argallow, '*') != NULL) {
+        FILE *f;
+        int fd;
+        snprintf(script.name, (size_t)BUFSIZ - 1,
+                 "%.1024s/%.128s%c%.128s%cinteractive%c%i%c%.128s",
+                 sudosh_option.logdir, user.from, sudosh_option.fdl, user.to,
+                 sudosh_option.fdl, sudosh_option.fdl, (int)now,
+                 sudosh_option.fdl, rand);
+
+        /* O_EXCL: never write through an existing file or symlink. */
+        fd = open(script.name, O_WRONLY | O_CREAT | O_EXCL,
+                  S_IRUSR | S_IWUSR);
+        f = (fd == -1) ? (FILE *)0 : fdopen(fd, "w");
+
+        if (f == (FILE *)0) {
+          fprintf(stderr, "%.100s: %.100s (%i)\n", script.name,
+                  strerror(errno), errno);
           exit(EXIT_FAILURE);
         }
 
-        //              fprintf(stderr,"Testing c\n");
-        // Make sure that c_str is in argallow
+        fprintf(f, "%.256s\n", c_str);
+        fclose(f);
 
-        /* A word too long to fit is refused outright; truncating it could
-         * match an allow-list entry that is only a prefix of the word. */
-        allowed = 0;
-        if (strlen(c_str) <= sizeof(argtest) - 3) {
-          size_t n = strlen(c_str);
-          argtest[0] = '$';
-          memcpy(argtest + 1, c_str, n);
-          argtest[n + 1] = '$';
-          argtest[n + 2] = '\0';
-          allowed = strstr(sudosh_option.argallow, argtest) != NULL;
-        }
-
-        if (allowed ||
-            strchr(sudosh_option.argallow, '*') != NULL) {
-          FILE *f;
-          snprintf(script.name, (size_t)BUFSIZ - 1,
-                   "%.1024s/%.128s%c%.128s%cinteractive%c%i%c%.128s",
-                   sudosh_option.logdir, user.from, sudosh_option.fdl, user.to,
-                   sudosh_option.fdl, sudosh_option.fdl, (int)now,
-                   sudosh_option.fdl, rand);
-
-          f = fopen(script.name, "w");
-
-          if (f == (FILE *)0) {
-            fprintf(stderr, "%.100s: %.100s (%i)\n", script.name,
-                    strerror(errno), errno);
-            exit(EXIT_FAILURE);
-          }
-
-          fprintf(f, "%.256s\n", c_str);
-          fclose(f);
-
-          execl("/bin/sh", "sh", "-c", c_command, (char *)0);
-          exit(EXIT_SUCCESS);
-          break;
-        } else {
-          fprintf(stderr, "\"%s\" isn't allowed to be executed.\n", c_str);
-          exit(EXIT_FAILURE);
-          break;
-        }
+        execl("/bin/sh", "sh", "-c", c_command, (char *)0);
+        exit(EXIT_SUCCESS);
+        break;
+      } else {
+        fprintf(stderr, "\"%s\" isn't allowed to be executed.\n", c_str);
+        exit(EXIT_FAILURE);
+        break;
       }
       break;
     case 'h':
@@ -467,7 +469,12 @@ int main(int argc, char *argv[], char *environ[]) {
     }
 
     if (FD_ISSET(0, &readfds)) {
-      if ((n = read(0, iobuf, BUFSIZ)) > 0) {
+      /* A signal such as SIGCHLD can interrupt the read; that is not the
+       * end of input, so try again. */
+      do {
+        n = read(0, iobuf, BUFSIZ);
+      } while (n < 0 && errno == EINTR);
+      if (n > 0) {
         DO_WRITE(pspair.mfd, iobuf, n);
 #ifdef RECORDINPUT
         {

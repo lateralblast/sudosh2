@@ -348,7 +348,7 @@ void parse(option *c, const char *file)
 	}
 	// Validation
 	// delimiter
-	if (!ispunct(c->fdl))
+	if (!ispunct((unsigned char)c->fdl))
 	{
 		fprintf(stderr, "%s: delimiter [%c] must be punctuation\n", file,
 				c->fdl);

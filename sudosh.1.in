@@ -13,6 +13,8 @@ can be used as a default login shell or as a filter.  sudosh takes advantage of 
 .BR sudo (8)
 and allows execution of a shell with logging.  It is basically a VCR and will record shell sessions and also has the ability to play back the sessions as they were originally recorded.  It records all input/output, keyboard input, and timing information so that the session acn be played back in the original format.
 .SH OPTIONS
+.IP "-c command"
+Run command with \fB/bin/sh -c\fR instead of starting an interactive shell. The command is run only if its first word is listed in a \fB-c arg allow\fR entry in sudosh.conf(5), unless that list contains \fB*\fR. The command is refused if it is empty, or if it contains any of the characters \fB; & | < > ` $ ( )\fR, or a newline or carriage return, unless the list contains \fB*\fR. This is how remote commands such as scp and rsync are allowed.
 .IP -h
 display help synopsis and exit.
 .IP -i

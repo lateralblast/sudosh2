@@ -13,11 +13,14 @@ is used to configure sudosh.  The log directory, logging parameters and other de
 .RS
 logdir = /path/to/logging/directory
 Use this to set the default logging directory.  Both sudosh and sudosh-replay will use this to deteremine the logging directory.
+
+.PP
+The directory is created with mode 1733: anyone can add recordings to it, but the sticky bit stops users deleting or renaming each other's recordings. An existing directory has its mode corrected each time sudosh or sudosh-replay runs. A path that exists but is not a directory is refused, and its permissions are not changed.
 .RE
-.IP default shell
+.IP "default shell"
 .RS
 default shell = /path/to/default/shell
-This is the default shell sudosh will use if it cannot automatically determine which shell to use..RE
+This is the default shell sudosh will use if it cannot automatically determine which shell to use.
 .RE
 .IP "immutable_recordings"
 .RS
@@ -43,7 +46,7 @@ Use this option to set which syslog facility sudosh will use.  The default is LO
 .IP "-c arg allow"
 .RS
 -c arg allow = command
-This option can be used multiple times.  If you wish to use sudosh as a default login shell and want to allow users to copy files, you can allow them to use commands such as rsync, scp, and sftp.  For each command you want to allow, use a new line and option. To allow all commands, use the special value of *.
+This option can be used multiple times. A command is allowed when its first word matches an entry. The entries are stored in a fixed buffer of about 8 KB in total; sudosh refuses to start if they do not fit.  If you wish to use sudosh as a default login shell and want to allow users to copy files, you can allow them to use commands such as rsync, scp, and sftp.  For each command you want to allow, use a new line and option. To allow all commands, use the special value of *.
 .PP
 Note: Modern OpenSSH (9.0+) uses the SFTP protocol by default for scp. If scp or SFTP clients (e.g., WinSCP, FileZilla) fail to connect through sudosh, ensure the sftp-server path is correct and that \fBsftp-server\fR (or \fBinternal-sftp\fR) is available. You may need to add:
 .PP

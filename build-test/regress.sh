@@ -93,7 +93,7 @@ echo "=== -c with an empty command"
 reset_logs
 write_conf "$T/logs" "-cargallow = ls"
 out=$(python3 "$PTY" emptyc "$SUDOSH")
-if [ "$out" = EXITED ]; then
+if [ "${out%% *}" = EXITED ]; then
     pass "-c with an empty command does not start a shell"
 else
     fail "-c with an empty command does not start a shell (got $out)"
@@ -114,7 +114,7 @@ fi
 echo "=== session signal and exit handling (pty)"
 reset_logs
 out=$(python3 "$PTY" sigterm "$SUDOSH")
-if [ "$out" = EXITED ] && [ "$(script_mode)" = 440 ]; then
+if [ "${out%% *}" = EXITED ] && [ "$(script_mode)" = 440 ]; then
     pass "SIGTERM ends the session and closes logs"
 else
     fail "SIGTERM ends the session and closes logs (got $out, mode $(script_mode))"
@@ -122,10 +122,63 @@ fi
 
 reset_logs
 out=$(python3 "$PTY" exit "$SUDOSH")
-if [ "$out" = EXITED ] && [ "$(script_mode)" = 440 ]; then
+if [ "${out%% *}" = EXITED ] && [ "$(script_mode)" = 440 ]; then
     pass "typing exit ends the session and closes logs"
 else
     fail "typing exit ends the session and closes logs (got $out, mode $(script_mode))"
+fi
+
+echo "=== session timing (pty)"
+reset_logs
+python3 "$PTY" timing "$SUDOSH" >/dev/null
+# Output that arrives two seconds after the previous output must carry that gap.
+max_delta=$(find "$T/logs" -name '*-time-*' -exec cat {} + | awk 'BEGIN { m = 0 } $2 > 0 && $1 > m { m = $1 } END { print m }')
+if awk -v t="$max_delta" 'BEGIN { exit !(t >= 1.5) }'; then
+    pass "a pause before output is recorded as that pause (${max_delta}s)"
+else
+    fail "a pause before output is recorded as that pause (largest gap ${max_delta}s)"
+fi
+
+echo "=== hostile environment (LD_PRELOAD test doubles)"
+PRELOAD="$T/regress_preload.so"
+if ! gcc -shared -fPIC -Wall -o "$PRELOAD" "$ROOT/build-test/regress_preload.c" -ldl 2>"$T/preload.log"; then
+    fail "build LD_PRELOAD test library (see $T/preload.log)"
+else
+    reset_logs
+    out=$(REGRESS_PRELOAD="$PRELOAD" REGRESS_FAKE_UID=4242 python3 "$PTY" wait "$SUDOSH")
+    if [ "$out" = "EXITED 1" ]; then
+        pass "a terminal owner with no passwd entry is refused cleanly"
+    else
+        fail "a terminal owner with no passwd entry is refused cleanly (got $out)"
+    fi
+
+    reset_logs
+    write_conf "$T/logs" "syslog.facility = LOG_DAEMON" "syslog.priority = LOG_INFO"
+    rm -f "$T/syslog.log"
+    out=$(REGRESS_SYSLOG_LOG="$T/syslog.log" REGRESS_PRELOAD="$PRELOAD" REGRESS_FAKE_UID=4242 \
+        REGRESS_FAKE_NAME='x%n%n' python3 "$PTY" exit "$SUDOSH")
+    if [ "$out" = "EXITED 0" ] && grep -q 'starting session for x%n%n' "$T/syslog.log" 2>/dev/null; then
+        pass "a login name containing % is logged literally at session start"
+    else
+        fail "a login name containing % is logged literally at session start (got $out)"
+    fi
+
+    write_conf "$T/logs" "defaultshell = /nonexistent/shell" "delimiter = -"
+    LD_PRELOAD="$PRELOAD" REGRESS_FAKE_SHELLS=1 "$REPLAY" >"$T/out" 2>"$T/err"
+    if grep -q "default shell '/nonexistent/shell': " "$T/err"; then
+        pass "the defaultshell error names the configured shell"
+    else
+        fail "the defaultshell error names the configured shell (got: $(cat "$T/err"))"
+    fi
+
+    reset_logs
+    out=$(REGRESS_PRELOAD="$PRELOAD" REGRESS_SHORT_WRITE=1 python3 "$PTY" hello "$SUDOSH")
+    count=$(cat "$T"/logs/*-script-* 2>/dev/null | grep -o hello | wc -l)
+    if [ "$out" = "EXITED 0" ] && [ "$count" -ge 2 ]; then
+        pass "writes that accept one byte at a time still reach the shell and the log"
+    else
+        fail "writes that accept one byte at a time still reach the shell and the log (got $out, $count)"
+    fi
 fi
 
 echo "=== input recording (--enable-recordinput build)"

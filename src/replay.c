@@ -467,7 +467,7 @@ replay (const char *time, const char *script, int div, int maxwait)
       if (sscanf (timebuf, "%f", &ftime) != 1)
 	{
 	  LL ();
-	  fprintf (stderr, "[error]: line %i: invalid float (!= %%f)",
+	  fprintf (stderr, "[error]: line %i: invalid float (!= %%f)\n",
 		   s_time.line);
 	  exit (EXIT_FAILURE);
 	}
@@ -482,7 +482,7 @@ replay (const char *time, const char *script, int div, int maxwait)
       if (sscanf (timebuf, "%i.%i", &sec, &usec) != 2)
 	{
 	  LL ();
-	  fprintf (stderr, "[error]: line %i: invalid float (!= %%i.%%i)",
+	  fprintf (stderr, "[error]: line %i: invalid float (!= %%i.%%i)\n",
 		   s_time.line);
 	  exit (EXIT_FAILURE);
 	}
@@ -722,7 +722,7 @@ count_dur (session * s)
       if (sscanf (time, "%f", &ftime) != 1)
 	{
 	  LL ();
-	  fprintf (stderr, "[error]: line %i: invalid float (!= %%f)",
+	  fprintf (stderr, "[error]: line %i: invalid float (!= %%f)\n",
 		   s_time.line);
 	  exit (EXIT_FAILURE);
 	}

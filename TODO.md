@@ -4,21 +4,16 @@ Status: `[ ]` open, `[~]` in progress, `[x]` done.
 
 ## Open
 
-- [ ] Add automated tests for fixes that the regression suite does not cover yet: timing order (1.1.5), `getpwuid` NULL checks (1.2.2), defaultshell error message (1.2.1), partial-write retry (1.2.7), syslog format argument (1.2.5).
-- [ ] Regenerate `configure` and `Makefile.in` with `autoreconf -fi`. They were edited by hand for the version and for `ChangeLog` → `CHANGELOG.md`, and `configure.ac` now uses `AM_INIT_AUTOMAKE([foreign])`.
-- [ ] Update `sudosh.1.in` and `sudosh.conf.5.in`: the log directory is now mode 1733, `-c` refuses shell metacharacters and an empty command, and `-cargallow` has a length limit.
 - [ ] Update `debian/changelog`, which still says 2.0.1 and is unrelated to the project version.
 - [ ] Confirm the release date of 1.0.7. The old ChangeLog says 2015-04-29, the `v1.0.7` tag says 2019-07-16. CHANGELOG.md uses the tag date.
-- [ ] Low-priority review findings not yet fixed:
-  - `parse.c` calls `ispunct()` on a `char` that may be negative (undefined behaviour).
-  - `sudosh.c` ends the session when `read(0)` returns EINTR, instead of retrying.
-  - `sudosh.c` opens the `-c` interactive log with `fopen("w")` rather than `O_EXCL`.
-  - `sudosh.c` has a redundant `if (c_str[0] != 0)` after the new empty-command check.
-  - `sudosh-replay` `invalid float` error lacks a trailing newline.
 - [ ] Commit the work (the user makes commits). Make sure `build-test/*.sh` and `build-test/regress_pty.py` are committed with their executable bits.
 
 ## Done
 
+- [x] Low-priority review findings fixed (1.3.6–1.4.0): `ispunct` on an unsigned char, newline on the replay `invalid float` messages (1.3.7), `read(0)` retried on EINTR (1.3.8), `-c` interactive log created with `O_EXCL` (1.3.9), redundant `c_str` check removed (1.4.0). No automated tests yet for these five.
+- [x] Man pages updated: `sudosh.1.in` documents `-c` and its restrictions, `sudosh.conf.5.in` documents the 1733 log directory and the `-cargallow` size limit (1.3.5).
+- [x] Regenerated `configure` and `Makefile.in` with `autoreconf -fi` (1.3.4).
+- [x] Automated tests for the timing, terminal-owner, login-name, defaultshell and one-byte-write fixes (1.3.3).
 - [x] Strict ISO build (`-std=c17 -O2`) works: `_DEFAULT_SOURCE` set in `src/Makefile.am`, `__USE_*` workaround removed from `super.h`, `parse.c` truncation warning fixed. Strict build also added to CI (1.3.2).
 - [x] Regression suite in CI: new `regression` job in `.github/workflows/build-test.yml` runs `build-test/check-version.sh` and `build-test/regress.sh`. Not yet committed.
 - [x] Regression suite `build-test/regress.sh` and pty driver `build-test/regress_pty.py`. Not yet committed.

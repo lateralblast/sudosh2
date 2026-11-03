@@ -307,6 +307,9 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
+# Ask glibc for POSIX/BSD interfaces even under -std=c17. Must be on the
+# command line: sudosh.c includes system headers before super.h.
+AM_CPPFLAGS = -D_DEFAULT_SOURCE
 sudosh_SOURCES = sudosh.c rand.c parse.c string.c getopt.h  struct.h  super.h util.c
 sudosh_replay_SOURCES = replay.c getopt.c getopt.h string.c parse.c  util.c
 sysconf_DATA = sudosh.conf
@@ -324,9 +327,9 @@ $(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
 	      exit 1;; \
 	  esac; \
 	done; \
-	echo ' cd $(top_srcdir) && $(AUTOMAKE) --gnu src/Makefile'; \
+	echo ' cd $(top_srcdir) && $(AUTOMAKE) --foreign src/Makefile'; \
 	$(am__cd) $(top_srcdir) && \
-	  $(AUTOMAKE) --gnu src/Makefile
+	  $(AUTOMAKE) --foreign src/Makefile
 Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 	@case '$?' in \
 	  *config.status*) \

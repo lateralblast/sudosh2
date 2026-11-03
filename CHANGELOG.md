@@ -6,6 +6,54 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-03
+
+### Changed
+
+- `sudosh -c` no longer repeats a check that the command is non-empty; the empty-command refusal in 1.3.1 is the only check now.
+
+## [1.3.9] - 2026-11-03
+
+### Fixed
+
+- `sudosh -c` creates its interactive log with `O_EXCL`, so it refuses to write through an existing file or symlink.
+
+## [1.3.8] - 2026-11-03
+
+### Fixed
+
+- A signal that interrupts the read of terminal input no longer ends the session. The read is retried on EINTR.
+
+## [1.3.7] - 2026-11-03
+
+### Fixed
+
+- `sudosh-replay` invalid timing messages end with a newline, so the shell prompt no longer runs onto the error.
+
+## [1.3.6] - 2026-11-03
+
+### Fixed
+
+- The delimiter check passes `ispunct` an unsigned character, so a delimiter byte above 127 no longer makes the call undefined.
+
+## [1.3.5] - 2026-11-03
+
+### Changed
+
+- The man pages describe the `-c` option and its restrictions, the 1733 log directory mode, and the size limit on `-c arg allow` entries. A malformed `default shell` heading in `sudosh.conf.5` is fixed.
+
+## [1.3.4] - 2026-11-03
+
+### Changed
+
+- `configure` and `Makefile.in` regenerated with `autoreconf -fi`, so the `src/Makefile.am` strict-mode define and the `CHANGELOG.md` distribution entry take effect in the generated build files.
+
+## [1.3.3] - 2026-11-03
+
+### Changed
+
+- Regression tests cover the session timing, terminal-owner, login-name, defaultshell and one-byte-write fixes. They use an LD_PRELOAD test library in `build-test/regress_preload.c` and a pty driver in `build-test/regress_pty.py`. Each test was checked against the bug it guards.
+
 ## [1.3.2] - 2026-11-03
 
 ### Fixed

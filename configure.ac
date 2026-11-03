@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.5])
-AC_INIT([sudosh2],[1.3.2],[josh@shortcutsolutions.net])
+AC_INIT([sudosh2],[1.4.0],[josh@shortcutsolutions.net])
 AC_CONFIG_SRCDIR([src/])
 AC_CANONICAL_TARGET
 
