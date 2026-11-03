@@ -124,6 +124,9 @@ static volatile sig_atomic_t stop_signal = 0;
 
 extern void parse(option *, const char *);
 
+#ifdef HAVE_POSIX_OPENPT
+extern int posix_openpt(int);
+#endif
 extern int unlockpt(int);
 extern int grantpt(int);
 extern char *ptsname(int);
@@ -151,6 +154,9 @@ int main(int argc, char *argv[], char *environ[]) {
   int c;
   char argtest[BUFSIZ];
   int allowed;
+
+  /* bye() gives this back, so record it before anything can fail and call bye(). */
+  orig_euid = geteuid();
 
   user.vshell = NULL;
   user.shell.ptr = NULL;
@@ -466,8 +472,6 @@ int main(int argc, char *argv[], char *environ[]) {
     close(pspair.sfd);
   }
 
-  orig_euid = geteuid();
-
   if (seteuid(getuid()) != 0) {
     perror("setuid failed");
     bye(EXIT_FAILURE);
@@ -583,11 +587,16 @@ int main(int argc, char *argv[], char *environ[]) {
 static int findms(struct pst *p) {
   char *sname;
 
-  if ((p->mfd = open("/dev/ptmx", O_RDWR)) == -1) {
-    if ((p->mfd = open("/dev/ptc", O_RDWR)) == -1) {
-      perror("Cannot open cloning master pty");
-      return -1;
-    }
+  p->mfd = -1;
+#ifdef HAVE_POSIX_OPENPT
+  /* The portable way to get a master pty. FreeBSD has no /dev/ptmx or
+   * /dev/ptc, so the device paths below do not work there. */
+  p->mfd = posix_openpt(O_RDWR | O_NOCTTY);
+#endif
+  if (p->mfd == -1 && (p->mfd = open("/dev/ptmx", O_RDWR)) == -1 &&
+      (p->mfd = open("/dev/ptc", O_RDWR)) == -1) {
+    perror("Cannot open a master pty");
+    return -1;
   }
 
   (void)unlockpt(p->mfd);

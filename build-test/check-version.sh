@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Checks that the project version is identical everywhere it is declared:
 #   configure.ac (AC_INIT), configure (generated), README.md (Version:),
 #   sudosh.spec (%define version), and the newest CHANGELOG.md heading.

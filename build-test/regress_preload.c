@@ -13,11 +13,13 @@
  *   REGRESS_FROZEN_CLOCK gettimeofday() and getpid() always return the same values
  *   REGRESS_PTSNAME_FAIL ptsname() returns NULL
  *   REGRESS_NULL_SHELL   the current user's passwd entry has no shell
+ *   REGRESS_NO_PTMX      open() fails for /dev/ptmx and /dev/ptc, as on FreeBSD
  *   REGRESS_SIGNED_SPACE isspace() and friends treat negative arguments as white space
  */
 #define _GNU_SOURCE
 #include <ctype.h>
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <sys/time.h>
 #include <time.h>
@@ -277,4 +279,26 @@ const unsigned short **__ctype_b_loc(void)
     fake_base = fake + 128;
   }
   return &fake_base;
+}
+
+int open(const char *path, int flags, ...)
+{
+  static int (*real)(const char *, int, ...);
+  mode_t mode = 0;
+
+  if (flags & O_CREAT) {
+    va_list ap;
+
+    va_start(ap, flags);
+    mode = (mode_t)va_arg(ap, int);
+    va_end(ap);
+  }
+  if (getenv("REGRESS_NO_PTMX") &&
+      (strcmp(path, "/dev/ptmx") == 0 || strcmp(path, "/dev/ptc") == 0)) {
+    errno = ENOENT;
+    return -1;
+  }
+  if (!real)
+    real = (int (*)(const char *, int, ...))dlsym(RTLD_NEXT, "open");
+  return real(path, flags, mode);
 }

@@ -4,11 +4,17 @@ Status: `[ ]` open, `[~]` in progress, `[x]` done.
 
 ## Open
 
+- [ ] Consider running `build-test/bsd-test.sh` in CI. GitHub-hosted Ubuntu runners provide `/dev/kvm`, but the 650 MB image would need caching between runs.
+- [ ] Only FreeBSD 14.5 has been tested. Other BSDs (OpenBSD, NetBSD, DragonFly) and other FreeBSD releases are untested, and the `LD_PRELOAD` tests are skipped on every non-Linux system.
 - [ ] Decide whether `-c arg allow` should restrict arguments and not just the command name. Today a user can pass any arguments to an allowed program (apart from shell metacharacters), so `find -fprint`, `rsync -e` or `scp -S` can run programs or write files. The limit is documented in the man pages; behaviour is unchanged. Options to choose from: (a) keep the current behaviour and the documented warning; (b) allow whole command lines, so `-c arg allow = scp -t` matches only that exact form; (c) allow a command plus a list of permitted options; (d) run the command without `/bin/sh -c`, splitting it into arguments ourselves, so quoting cannot hide anything. Any of (b) to (d) changes the `sudosh.conf` format and needs a decision on compatibility with existing configs and with the scp/sftp/rsync server commands that clients send. Chosen direction if restricted entries are wanted later: (c) plus (d) for restricted entries only, leaving entries without an option list on the current `/bin/sh -c` path, with tested option lists for scp, sftp-server and rsync. Other ideas considered: per-user allow-lists, a built-in blocklist of dangerous options (brittle), and running `-c` commands as a service account.
 - [ ] Commit the work (the user makes commits). Make sure `build-test/*.sh` and `build-test/regress_pty.py` are committed with their executable bits.
 
 ## Done
 
+- [x] Add `build-test/bsd-test.sh`, which runs the regression suite on FreeBSD in a throwaway QEMU VM from an official, checksum-verified VM image, and document it. (1.8.1)
+- [x] Make `build-test/regress.sh` portable to FreeBSD: it assumed GNU `stat`, `date +%s%N`, `rsync`, `gcc`, `make`, `/proc` and an `ls` exit status of 2, and the glibc-only `LD_PRELOAD` tests must be skipped there. (1.8.0)
+- [x] sudosh cannot open a pseudo-terminal on FreeBSD: it opens `/dev/ptmx` or `/dev/ptc`, and FreeBSD has neither. Use `posix_openpt()` (checked in `configure.ac`) and keep the device paths as a fallback. (1.7.9)
+- [x] `bye()` runs `seteuid(orig_euid)` before `orig_euid` is set when the session fails early, so for a non-root user the recordings are left unsealed (mode 600) and the error is misleading ("Reacquiring uid 0 failed"). Found on FreeBSD; it also happens on Linux. (1.7.8)
 - [x] Add automated tests for the small fixes that had none: `VMIN` in raw mode, the NULL-shell guard, and the `isspace` unsigned-char cast. (1.7.7)
 - [x] Document the recommended way to allow file transfer: `internal-sftp` with `ChrootDirectory` and `ForceCommand`, `rrsync` for rsync, or `command=` in `authorized_keys`, instead of allowing scp or rsync with `-c arg allow`. (1.7.6)
 - [x] `sudosh -c` runs `/bin/sh -c` with the caller's whole environment (`PATH`, `LD_PRELOAD`, `BASH_ENV` and so on); honour `clearenvironment` and use a fixed `PATH`, as interactive sessions do. (1.7.5)

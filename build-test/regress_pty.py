@@ -124,7 +124,7 @@ def main():
         print("FOO=" + marker(text, "FOOVAL"))
         print("USER=" + marker(text, "USERVAL"))
     elif mode == "fds":
-        status, text = run(argv, keys=[b"echo FDLIST=$(ls /proc/self/fd | tr '\\n' ' ')=\r", b"exit\r"])
+        status, text = run(argv, keys=[b"echo FDLIST=$(ls /dev/fd/ | tr '\\n' ' ')=\r", b"exit\r"])
         print(status)
         print("FDS=" + marker(text, "FDLIST"))
     elif mode == "rawmode":

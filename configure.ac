@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.5])
-AC_INIT([sudosh2],[1.7.7],[josh@shortcutsolutions.net])
+AC_INIT([sudosh2],[1.8.1],[josh@shortcutsolutions.net])
 AC_CONFIG_SRCDIR([src/])
 AC_CANONICAL_TARGET
 
@@ -96,6 +96,7 @@ AC_CHECK_FUNCS(openpty, openpty=1, openpty=0)
 AC_CHECK_FUNCS([getusershell gettimeofday])
 AC_CHECK_FUNCS([mkdir rmdir])
 AC_CHECK_FUNCS([setpenv])
+AC_CHECK_FUNCS([posix_openpt])
 AC_CHECK_FUNCS([atoi sscanf open read close fflush fclose fopen fread fputs fprintf])
 AC_CHECK_FUNCS([strncpy snprintf strcmp strlen strftime isspace localtime])
 AC_CHECK_FUNCS([opendir readdir closedir])

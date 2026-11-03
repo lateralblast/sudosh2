@@ -2,7 +2,7 @@
 #
 %define origname sudosh2
 %define name sudosh2
-%define version 1.7.7
+%define version 1.8.1
 %define release 1.el5
 
 Name: %{name}

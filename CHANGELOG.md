@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-11-03
+
+### Added
+
+- `build-test/bsd-test.sh` runs the regression suite on FreeBSD in a throwaway QEMU virtual machine, from an official FreeBSD VM image that is downloaded once and checked against FreeBSD's published SHA256. It boots a copy-on-write overlay with a key made for the run, copies the source in, runs `check-version.sh` and `regress.sh` as an ordinary user, and deletes the VM. Commands: `test`, `start`, `sync`, `ssh`, `stop`, `clean`. The README describes it.
+
+## [1.8.0] - 2026-11-03
+
+### Changed
+
+- `build-test/regress.sh` runs on FreeBSD as well as Linux. It no longer assumes GNU `stat`, `date +%s%N`, `rsync`, `gcc`, `make` or `/proc`, or that `ls` exits with 2, and it skips the glibc-only LD_PRELOAD tests on other systems. It uses `#!/usr/bin/env bash`.
+
+## [1.7.9] - 2026-11-03
+
+### Fixed
+
+- sudosh can open its pseudo-terminal on FreeBSD. It opened `/dev/ptmx` or `/dev/ptc`, which FreeBSD does not have, so it could not start a session there. It now uses `posix_openpt()` where `configure` finds it, and still falls back to the device paths. `configure.ac` checks for `posix_openpt`.
+
+## [1.7.8] - 2026-11-03
+
+### Fixed
+
+- When a session fails to start (for example no pseudo-terminal can be opened), sudosh seals the recordings and reports the real error. It used to try to regain root with an effective user id it had not recorded yet, so for a non-root user the call failed, the recordings stayed at mode 600, and the message was "Reacquiring uid 0 failed". Found while testing on FreeBSD.
+
 ## [1.7.7] - 2026-11-03
 
 ### Changed

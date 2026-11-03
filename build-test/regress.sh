@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Regression tests for sudosh2.
 #
 # Copies the working tree to a temporary directory, builds it with the CI
@@ -6,7 +6,26 @@
 # private --sysconfdir, so no real installation is touched.
 #
 # Exit status is the number of failed tests (0 when everything passes).
+#
+# It runs on Linux and on FreeBSD (see bsd-test.sh). The LD_PRELOAD test
+# doubles depend on glibc, so those tests are skipped on other systems.
 set -u
+
+OS=$(uname -s)
+CC=${CC:-cc}
+MAKE=$(command -v gmake || echo make)
+
+# fmode FILE: permission bits in octal, with GNU or BSD stat. BSD stat gives the
+# setuid/setgid/sticky bits (%Mp) and the rwx bits (%Lp) separately.
+fmode() {
+    local m
+    if m=$(stat -c %a "$1" 2>/dev/null); then echo "$m"; return 0; fi
+    m=$(stat -f %Mp%Lp "$1") || return 1
+    printf '%o\n' $((8#$m))
+}
+
+# now_ms: milliseconds since the epoch (date +%s%N is GNU only).
+now_ms() { python3 -c 'import time; print(int(time.time() * 1000))'; }
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PTY="$ROOT/build-test/regress_pty.py"
@@ -25,14 +44,14 @@ build() {
     local name=$1; shift
     local dir="$T/$name"
     mkdir -p "$dir"
-    rsync -a --exclude .git "$ROOT/" "$dir/" || return 1
+    (cd "$ROOT" && tar --exclude .git -cf - .) | (cd "$dir" && tar -xf -) || return 1
     # The committed generated files may come from a different automake than the
     # one installed here. Mark them up to date, in dependency order, so make does
     # not try to regenerate them (as when building from a release tarball).
     (cd "$dir" && touch aclocal.m4 && touch configure config.h.in &&
         touch Makefile.in src/Makefile.in &&
         ./configure "$@" >"$T/$name.configure.log" 2>&1 &&
-        make CFLAGS='-Wall -Werror -pedantic' >"$T/$name.make.log" 2>&1)
+        $MAKE CFLAGS='-Wall -Werror -pedantic' >"$T/$name.make.log" 2>&1)
 }
 
 # write_conf LOGDIR [EXTRA_LINE...]: write the sudosh.conf the build will read.
@@ -55,7 +74,9 @@ reset_logs() {
 
 # script_mode: permission bits of the first script file in the log directory.
 script_mode() {
-    find "$T/logs" -name '*-script-*' -exec stat -c %a {} + 2>/dev/null | head -1
+    local f
+    f=$(find "$T/logs" -name '*-script-*' 2>/dev/null | head -1)
+    [ -n "$f" ] && fmode "$f"
 }
 
 echo "=== version agreement"
@@ -82,17 +103,18 @@ rm -f "$T/pwn-1" "$T/pwn-2"
 write_conf "$T/logs" "-cargallow = ls"
 "$SUDOSH" -c "ls /nonexistent-dir \$(touch $T/pwn-1)" >/dev/null 2>&1
 "$SUDOSH" -c "$(printf 'ls /nonexistent-dir\ntouch %s/pwn-2' "$T")" >/dev/null 2>&1
-"$SUDOSH" -c 'ls /nonexistent-dir' >/dev/null 2>&1
+"$SUDOSH" -c 'ls /nonexistent-dir' >/dev/null 2>"$T/err"
 rc=$?
 if [ ! -e "$T/pwn-1" ] && [ ! -e "$T/pwn-2" ]; then
     pass "-c rejects command substitution and newlines"
 else
     fail "-c rejects command substitution and newlines"
 fi
-if [ "$rc" -eq 2 ]; then
+# ls exits 2 on GNU systems and 1 on BSD, so look at what it said instead.
+if [ "$rc" -ne 0 ] && [ "$rc" -ne 127 ] && grep -q 'No such file' "$T/err"; then
     pass "-c still runs an allowed command"
 else
-    fail "-c still runs an allowed command (exit $rc, expected 2)"
+    fail "-c still runs an allowed command (exit $rc: $(head -c 100 "$T/err"))"
 fi
 
 echo "=== -c with an empty command"
@@ -224,7 +246,9 @@ fi
 
 echo "=== hostile environment (LD_PRELOAD test doubles)"
 PRELOAD="$T/regress_preload.so"
-if ! gcc -shared -fPIC -Wall -o "$PRELOAD" "$ROOT/build-test/regress_preload.c" -ldl 2>"$T/preload.log"; then
+if [ "$OS" != Linux ]; then
+    echo "SKIP: the LD_PRELOAD test doubles are glibc-specific ($OS)"
+elif ! "$CC" -shared -fPIC -Wall -o "$PRELOAD" "$ROOT/build-test/regress_preload.c" -ldl 2>"$T/preload.log"; then
     fail "build LD_PRELOAD test library (see $T/preload.log)"
 else
     reset_logs
@@ -341,11 +365,19 @@ else
     fi
 
     reset_logs
-    out=$(REGRESS_PRELOAD="$PRELOAD" REGRESS_PTSNAME_FAIL=1 python3 "$PTY" wait "$SUDOSH")
-    if [ "$out" = "EXITED 1" ]; then
-        pass "a failure to name the session terminal ends sudosh cleanly"
+    out=$(REGRESS_PRELOAD="$PRELOAD" REGRESS_NO_PTMX=1 python3 "$PTY" exit "$SUDOSH")
+    if [ "${out%% *}" = EXITED ] && [ "$(script_mode)" = 440 ] && [ "$out" = "EXITED 0" ]; then
+        pass "a session starts when /dev/ptmx does not exist (as on FreeBSD)"
     else
-        fail "a failure to name the session terminal ends sudosh cleanly (got $out)"
+        fail "a session starts when /dev/ptmx does not exist (as on FreeBSD) (got $out, mode $(script_mode))"
+    fi
+
+    reset_logs
+    out=$(REGRESS_PRELOAD="$PRELOAD" REGRESS_PTSNAME_FAIL=1 python3 "$PTY" wait "$SUDOSH")
+    if [ "$out" = "EXITED 1" ] && [ "$(script_mode)" = 440 ]; then
+        pass "a failure to open the session terminal ends sudosh cleanly and closes the logs"
+    else
+        fail "a failure to open the session terminal ends sudosh cleanly and closes the logs (got $out, mode $(script_mode))"
     fi
 fi
 
@@ -406,11 +438,11 @@ fi
 reset_logs
 mk_script x
 mk_time "$(printf '10.0 1\n')"
-start=$(date +%s%N)
+start=$(now_ms)
 "$REPLAY" "$ID" 2 2 >/dev/null 2>&1
 rc=$?
-end=$(date +%s%N)
-ms=$(( (end - start) / 1000000 ))
+end=$(now_ms)
+ms=$(( end - start ))
 if [ "$rc" -eq 0 ] && [ "$ms" -ge 1800 ] && [ "$ms" -lt 4000 ]; then
     pass "MAXWAIT caps a pause at MAXWAIT seconds of playback"
 else
@@ -505,10 +537,10 @@ fi
 reset_logs
 mk_script "$(head -c 20 /dev/zero | tr '\0' x)"
 mk_time "$(for i in $(seq 20); do echo '0.090000 1'; done)"
-start=$(date +%s%N)
+start=$(now_ms)
 "$REPLAY" "$ID" >/dev/null 2>&1
-end=$(date +%s%N)
-ms=$(( (end - start) / 1000000 ))
+end=$(now_ms)
+ms=$(( end - start ))
 if [ "$ms" -ge 1500 ] && [ "$ms" -lt 4000 ]; then
     pass "short pauses are replayed at their recorded length (${ms}ms for 1.8s)"
 else
@@ -555,7 +587,7 @@ int main(void)
     return 0;
 }
 EOF
-if gcc -Wall -I"$T/main" -o "$T/timetest" "$T/timetest.c" "$T/main/src/string.c" 2>"$T/time.build.log"; then
+if "$CC" -Wall -I"$T/main" -o "$T/timetest" "$T/timetest.c" "$T/main/src/string.c" 2>"$T/time.build.log"; then
     got=$("$T/timetest")
     want="Never 0s 59s 1m 1h 1h1m1s 1d 1d1h1m1s "
     if [ "$got" = "$want" ]; then
@@ -593,19 +625,21 @@ int main(void)
     return 0;
 }
 EOF
-if gcc -Wall -I"$T/main" -o "$T/randtest" "$T/randtest.c" "$T/main/src/rand.c" 2>"$T/rand.build.log"; then
+if "$CC" -Wall -I"$T/main" -o "$T/randtest" "$T/randtest.c" "$T/main/src/rand.c" 2>"$T/rand.build.log"; then
     read -r avg bad _ < <("$T/randtest")
     if [ "$bad" -eq 0 ] && awk -v a="$avg" 'BEGIN { exit !(a >= 13) }'; then
         pass "random suffix uses distinct characters (avg $avg distinct of 16)"
     else
         fail "random suffix uses distinct characters (avg $avg distinct of 16)"
     fi
-    a=$(LD_PRELOAD="$PRELOAD" REGRESS_FROZEN_CLOCK=1 "$T/randtest")
-    b=$(LD_PRELOAD="$PRELOAD" REGRESS_FROZEN_CLOCK=1 "$T/randtest")
-    if [ "$a" != "$b" ]; then
-        pass "the session suffix does not depend on the clock and pid alone"
-    else
-        fail "the session suffix does not depend on the clock and pid alone (both runs gave: $a)"
+    if [ "$OS" = Linux ]; then
+        a=$(LD_PRELOAD="$PRELOAD" REGRESS_FROZEN_CLOCK=1 "$T/randtest")
+        b=$(LD_PRELOAD="$PRELOAD" REGRESS_FROZEN_CLOCK=1 "$T/randtest")
+        if [ "$a" != "$b" ]; then
+            pass "the session suffix does not depend on the clock and pid alone"
+        else
+            fail "the session suffix does not depend on the clock and pid alone (both runs gave: $a)"
+        fi
     fi
 else
     fail "random suffix test build (see $T/rand.build.log)"
@@ -616,7 +650,7 @@ rm -rf "$T/mklogs"
 write_conf "$T/mklogs"
 (umask 022; "$REPLAY" >/dev/null 2>&1)
 rc=$?
-mode=$(stat -c %a "$T/mklogs" 2>/dev/null)
+mode=$(fmode "$T/mklogs" 2>/dev/null)
 if [ "$rc" -eq 0 ] && [ "$mode" = 1733 ]; then
     pass "new logdir is created with mode 1733"
 else
@@ -627,7 +661,7 @@ mkdir -p "$T/mklogs2"
 chmod 733 "$T/mklogs2"
 write_conf "$T/mklogs2"
 "$REPLAY" >/dev/null 2>&1
-mode=$(stat -c %a "$T/mklogs2")
+mode=$(fmode "$T/mklogs2")
 if [ "$mode" = 1733 ]; then
     pass "existing logdir is corrected to mode 1733"
 else
@@ -639,7 +673,7 @@ chmod 644 "$T/afile"
 write_conf "$T/afile"
 "$REPLAY" >/dev/null 2>&1
 rc=$?
-mode=$(stat -c %a "$T/afile")
+mode=$(fmode "$T/afile")
 if [ "$rc" -ne 0 ] && [ "$mode" = 644 ]; then
     pass "a non-directory logdir is refused and left alone"
 else

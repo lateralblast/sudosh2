@@ -1,5 +1,5 @@
 # sudosh2
-Version: 1.7.7
+Version: 1.8.1
 
 sudosh2 is an auditing layer between sudo and a user's shell, that can also be used as a login shell.
 
@@ -38,3 +38,10 @@ autoreconf -fi && ./configure && make
 ## File transfer
 
 Letting users run scp, sftp or rsync through sudosh with `-c arg allow` only checks the command name, not its arguments. For users who just need to move files, configure `sshd` instead: `internal-sftp` with `ChrootDirectory`, `rrsync` in `authorized_keys`, or a fixed `command=`. See the FILE TRANSFER section of `sudosh.conf(5)`.
+
+## Testing
+
+- `build-test/check-version.sh` checks that the version is the same everywhere it is declared.
+- `build-test/regress.sh` builds a copy of the tree and runs the regression suite. It runs on Linux and FreeBSD (the `LD_PRELOAD` tests are Linux only).
+- `build-test/bsd-test.sh` runs that suite on FreeBSD in a throwaway QEMU virtual machine, so you can test BSD from a Linux machine. It downloads an official FreeBSD VM image once (about 650 MB, checked against FreeBSD's published SHA256), boots a copy of it, copies the source in, runs the tests as an ordinary user, and deletes the copy. It needs `qemu-system-x86_64`, `qemu-img`, `xz`, `curl`, `ssh` and `genisoimage` (or `mkisofs` or `xorriso`), and `/dev/kvm` to be fast. Run `build-test/bsd-test.sh --help` for the commands (`test`, `start`, `sync`, `ssh`, `stop`, `clean`) and options.
+
