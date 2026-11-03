@@ -168,6 +168,24 @@ else
     fail "a high-numbered inherited descriptor is not passed to the session shell (shell holds: $fds)"
 fi
 
+echo "=== -c environment"
+reset_logs
+write_conf "$T/logs" "-cargallow = env"
+if [ "$ME" = root ]; then want_path='PATH=/sbin:/bin:/usr/sbin:/usr/bin'; else want_path='PATH=/usr/bin:/bin:/usr/local/bin'; fi
+cenv=$(FOO=bar PATH="/tmp/evil:$PATH" "$SUDOSH" -c env 2>/dev/null)
+if ! echo "$cenv" | grep -q '^FOO=' && echo "$cenv" | grep -qx "$want_path" && echo "$cenv" | grep -qx "USER=$ME"; then
+    pass "-c runs the command with a minimal environment and a fixed PATH"
+else
+    fail "-c runs the command with a minimal environment and a fixed PATH ($(echo "$cenv" | tr '\n' ' '))"
+fi
+write_conf "$T/logs" "-cargallow = env" "clearenvironment = false"
+cenv=$(FOO=bar "$SUDOSH" -c env 2>/dev/null)
+if echo "$cenv" | grep -qx 'FOO=bar'; then
+    pass "-c keeps the caller's environment when clearenvironment = false"
+else
+    fail "-c keeps the caller's environment when clearenvironment = false"
+fi
+
 echo "=== session signal and exit handling (pty)"
 reset_logs
 out=$(python3 "$PTY" sigterm "$SUDOSH")
@@ -278,6 +296,20 @@ else
         pass "log file names keep a positive timestamp after 2038"
     else
         fail "log file names keep a positive timestamp after 2038 ($(ls "$T/logs" | tr '\n' ' '))"
+    fi
+
+    reset_logs
+    write_conf "$T/logs" "syslog.facility = LOG_DAEMON" "syslog.priority = LOG_INFO" "-cargallow = echo"
+    rm -f "$T/syslog.log"
+    LD_PRELOAD="$PRELOAD" REGRESS_SYSLOG_LOG="$T/syslog.log" REGRESS_EXECL_FAIL=1 "$SUDOSH" -c 'echo hi' >/dev/null 2>&1
+    LD_PRELOAD="$PRELOAD" REGRESS_SYSLOG_LOG="$T/syslog.log" "$SUDOSH" -c 'ls /' >/dev/null 2>&1
+    LD_PRELOAD="$PRELOAD" REGRESS_SYSLOG_LOG="$T/syslog.log" "$SUDOSH" -c "$(printf 'echo a\nb')" >/dev/null 2>&1
+    if grep -q "running -c command for .* as $ME: echo hi" "$T/syslog.log" 2>/dev/null &&
+       grep -q "refused -c command for .*: ls /" "$T/syslog.log" 2>/dev/null &&
+       grep -q "refused -c command for .*: echo a?b" "$T/syslog.log" 2>/dev/null; then
+        pass "-c commands are logged to syslog, allowed and refused, with control characters replaced"
+    else
+        fail "-c commands are logged to syslog, allowed and refused ($(cat "$T/syslog.log" 2>/dev/null | tr '\n' '|'))"
     fi
 
     reset_logs

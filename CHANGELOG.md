@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+## [1.7.6] - 2026-11-03
+
+### Changed
+
+- The man pages and README recommend setting up file transfer in `sshd` (`internal-sftp` with `ChrootDirectory`, `rrsync` or a fixed `command=` in `authorized_keys`) instead of allowing scp or rsync with `-c arg allow`. They also describe the `-c` syslog logging and its minimal environment.
+
+## [1.7.5] - 2026-11-03
+
+### Changed
+
+- `sudosh -c` runs the command with a minimal environment (`HOME`, `LOGNAME`, `USER` and a fixed `PATH`), as interactive sessions do, unless `clearenvironment = false`. It used to pass on the caller's whole environment, including `PATH`, `LD_PRELOAD` and `BASH_ENV`. A command that needs a variable must now be allowed with `clearenvironment = false`, and a program outside the fixed `PATH` needs its full path in the `-c arg allow` entry.
+
+## [1.7.4] - 2026-11-03
+
+### Added
+
+- With `syslog.priority` set, `sudosh -c` logs every command to syslog, as `running -c command …` or `refused -c command …`, with the user and the command. Refused commands were only printed to stderr before. Control characters in the command are replaced so it cannot forge a second log line.
+
+## [1.7.3] - 2026-11-03
+
+### Fixed
+
+- The `-c arg allow` section of the `sudosh.conf` man page is in the right order again. Text about login shells and `*` had ended up after the warning, as if part of it.
+
 ## [1.7.2] - 2026-11-03
 
 ### Fixed

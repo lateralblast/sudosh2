@@ -1,5 +1,5 @@
 # sudosh2
-Version: 1.7.2
+Version: 1.7.6
 
 sudosh2 is an auditing layer between sudo and a user's shell, that can also be used as a login shell.
 
@@ -34,3 +34,7 @@ Fix for autoconf errors:
 autoreconf -fi && ./configure && make
 
 ```
+
+## File transfer
+
+Letting users run scp, sftp or rsync through sudosh with `-c arg allow` only checks the command name, not its arguments. For users who just need to move files, configure `sshd` instead: `internal-sftp` with `ChrootDirectory`, `rrsync` in `authorized_keys`, or a fixed `command=`. See the FILE TRANSFER section of `sudosh.conf(5)`.

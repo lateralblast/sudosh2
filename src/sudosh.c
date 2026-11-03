@@ -108,6 +108,7 @@ static void bye(int);
 static void newwinsize(int);
 static void on_stop(int);
 static void check_delimiter(void);
+static void log_c_command(const char *what, const char *command);
 static void prepchild(struct pst *);
 static void rawmode(int);
 static int findms(struct pst *);
@@ -201,6 +202,7 @@ int main(int argc, char *argv[], char *environ[]) {
 
       /* An empty command must not fall through to an interactive shell. */
       if (c_str[0] == 0) {
+        log_c_command("refused", c_command);
         fprintf(stderr, "\"%s\" isn't allowed to be executed.\n", c_command);
         exit(EXIT_FAILURE);
       }
@@ -210,6 +212,7 @@ int main(int argc, char *argv[], char *environ[]) {
        * let an allowed first word run arbitrary commands. */
       if (strchr(sudosh_option.argallow, '*') == NULL &&
           strpbrk(c_command, ";&|<>`$()\n\r") != NULL) {
+        log_c_command("refused", c_command);
         fprintf(stderr,
                 "\"%s\" isn't allowed to be executed with process or "
                 "redirect controls.\n",
@@ -266,13 +269,43 @@ int main(int argc, char *argv[], char *environ[]) {
         fprintf(f, "%s\n", logline);
         fclose(f);
 
-        execl("/bin/sh", "sh", "-c", c_command, (char *)0);
+        log_c_command("running", c_command);
+        if (sudosh_option.clearenvironment != 0) {
+          /* Run with a minimal environment, as interactive sessions do, so the
+           * caller's PATH, LD_PRELOAD, BASH_ENV and so on do not reach the
+           * command. clearenvironment = false keeps the caller's. */
+          char env_home[BUFSIZ], env_logname[BUFSIZ], env_user[BUFSIZ];
+          char env_path[BUFSIZ];
+          char *argv_sh[4];
+          char *env_c[5];
+
+          snprintf(env_home, sizeof(env_home), "HOME=%s", user.pw->pw_dir);
+          snprintf(env_logname, sizeof(env_logname), "LOGNAME=%.128s", user.to);
+          snprintf(env_user, sizeof(env_user), "USER=%.128s", user.to);
+          snprintf(env_path, sizeof(env_path), "%s",
+                   strcmp(user.to, "root") == 0
+                       ? "PATH=/sbin:/bin:/usr/sbin:/usr/bin"
+                       : "PATH=/usr/bin:/bin:/usr/local/bin");
+          argv_sh[0] = "sh";
+          argv_sh[1] = "-c";
+          argv_sh[2] = c_command;
+          argv_sh[3] = NULL;
+          env_c[0] = env_home;
+          env_c[1] = env_logname;
+          env_c[2] = env_user;
+          env_c[3] = env_path;
+          env_c[4] = NULL;
+          execve("/bin/sh", argv_sh, env_c);
+        } else {
+          execl("/bin/sh", "sh", "-c", c_command, (char *)0);
+        }
         /* execl only returns on failure; do not report success. */
         fprintf(stderr, "%s: cannot run /bin/sh: %s\n", progname,
                 strerror(errno));
         exit(127);
         break;
       } else {
+        log_c_command("refused", c_command);
         fprintf(stderr, "\"%s\" isn't allowed to be executed.\n", c_str);
         exit(EXIT_FAILURE);
         break;
@@ -706,6 +739,25 @@ static void check_delimiter(void) {
             "sudosh-replay will not list this session. Choose another "
             "delimiter in sudosh.conf.\n",
             sudosh_option.fdl);
+}
+
+/* Record a -c command in syslog, allowed or refused. The command comes from
+ * the user, so control characters (a newline would forge a second log line)
+ * are replaced. Nothing is logged unless syslog.priority is configured. */
+static void log_c_command(const char *what, const char *command) {
+  char clean[BUFSIZ];
+  size_t i;
+
+  if (sudosh_option.priority == -1)
+    return;
+  for (i = 0; command[i] != '\0' && i < 1024; i++)
+    clean[i] = ((unsigned char)command[i] < 0x20 ||
+                (unsigned char)command[i] == 0x7f)
+                   ? '?'
+                   : command[i];
+  clean[i] = '\0';
+  mysyslog(sudosh_option.priority, "%s -c command for %s as %s: %s", what,
+           user.from, user.to, clean);
 }
 
 /* Runs in signal context, so it only records the request. */

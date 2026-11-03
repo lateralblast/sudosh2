@@ -47,9 +47,9 @@ Use this option to set which syslog facility sudosh will use.  The default is LO
 .IP "-c arg allow"
 .RS
 -c arg allow = command
-This option can be used multiple times. A command is allowed when its first word matches an entry. The entries are stored in a fixed buffer of about 8 KB in total; sudosh refuses to start if they do not fit.
+This option can be used multiple times.  If you wish to use sudosh as a default login shell and want to allow users to copy files, you can allow them to use commands such as rsync, scp, and sftp.  For each command you want to allow, use a new line and option. To allow all commands, use the special value of *. A command is allowed when its first word matches an entry. The entries are stored in a fixed buffer of about 8 KB in total; sudosh refuses to start if they do not fit.
 .PP
-\fBWarning:\fR only the command name is checked, not its arguments. A command is run with all the arguments the user gives it (apart from the shell characters \fB; & | < > ` $ ( )\fR and newlines, which are refused unless the list contains \fB*\fR). An allowed program can therefore be used to run other programs or write files if it has options that do so, for example \fBfind -exec\fR and \fBfind -fprint\fR, \fBrsync -e\fR, \fBscp -S\fR and \fBscp -o ProxyCommand=\fR, or \fBtar --to-command\fR. Only allow programs whose options you have reviewed, and treat the list as a convenience, not as a security boundary.  If you wish to use sudosh as a default login shell and want to allow users to copy files, you can allow them to use commands such as rsync, scp, and sftp.  For each command you want to allow, use a new line and option. To allow all commands, use the special value of *.
+\fBWarning:\fR only the command name is checked, not its arguments. A command is run with all the arguments the user gives it (apart from the shell characters \fB; & | < > ` $ ( )\fR and newlines, which are refused unless the list contains \fB*\fR). An allowed program can therefore be used to run other programs or write files if it has options that do so, for example \fBfind -exec\fR and \fBfind -fprint\fR, \fBrsync -e\fR, \fBscp -S\fR and \fBscp -o ProxyCommand=\fR, or \fBtar --to-command\fR. Only allow programs whose options you have reviewed, and treat the list as a convenience, not as a security boundary.
 .PP
 Note: Modern OpenSSH (9.0+) uses the SFTP protocol by default for scp. If scp or SFTP clients (e.g., WinSCP, FileZilla) fail to connect through sudosh, ensure the sftp-server path is correct and that \fBsftp-server\fR (or \fBinternal-sftp\fR) is available. You may need to add:
 .PP
@@ -60,8 +60,18 @@ The sftp-server path varies by distribution. Use \fBfind / -name sftp-server\fR 
 .IP clearenvironment
 .RS
 clearenvironment = false
-Set this option to true to clear shell environment variables for incoming sessions. Set to false for things like ssh agent forwarding.
+Set this option to true to clear shell environment variables for incoming sessions. Set to false for things like ssh agent forwarding. This also applies to commands run with \fB-c\fR, which otherwise get only \fBHOME\fR, \fBLOGNAME\fR, \fBUSER\fR and a fixed \fBPATH\fR.
 
+.SH FILE TRANSFER
+Allowing scp, sftp or rsync with \fB-c arg allow\fR is convenient, but the list checks only the command name (see the warning above). For users who only need to transfer files, it is safer to set this up in \fBsshd_config\fR(5) and not give them a sudosh login at all:
+.IP \(bu 3
+sftp: use OpenSSH's \fBinternal-sftp\fR with \fBChrootDirectory\fR and \fBForceCommand internal-sftp\fR in a \fBMatch\fR block for those users. They are confined to one directory, with no shell and no command line.
+.IP \(bu 3
+rsync: use the \fBrrsync\fR script that ships with rsync, as \fBcommand="rrsync /path"\fR in the user's \fBauthorized_keys\fR. It checks both the options and the paths. It reads \fBSSH_ORIGINAL_COMMAND\fR, which sshd sets only for \fBcommand=\fR, so it cannot be used through \fB-c arg allow\fR.
+.IP \(bu 3
+a single fixed job: put \fBcommand="..."\fR in \fBauthorized_keys\fR, so the client cannot choose the command.
+.PP
+Keep sudosh for interactive sessions that should be recorded.
 .SH EXAMPLES
 # Sudosh Configuration File
 .RE

@@ -9,7 +9,7 @@
  *   REGRESS_SHORT_WRITE  write() accepts at most one byte per call
  *   REGRESS_SYSLOG_LOG   syslog() appends each formatted message to this file
  *   REGRESS_NOW          time() returns this many seconds since the epoch
- *   REGRESS_EXECL_FAIL   execl() fails with ENOENT
+ *   REGRESS_EXECL_FAIL   execl() and execve() fail with ENOENT
  *   REGRESS_FROZEN_CLOCK gettimeofday() and getpid() always return the same values
  *   REGRESS_PTSNAME_FAIL ptsname() returns NULL
  */
@@ -225,4 +225,17 @@ char *ptsname(int fd)
   if (!real)
     real = (char *(*)(int))dlsym(RTLD_NEXT, "ptsname");
   return real(fd);
+}
+
+int execve(const char *path, char *const argv[], char *const envp[])
+{
+  static int (*real)(const char *, char *const[], char *const[]);
+
+  if (getenv("REGRESS_EXECL_FAIL")) {
+    errno = ENOENT;
+    return -1;
+  }
+  if (!real)
+    real = (int (*)(const char *, char *const[], char *const[]))dlsym(RTLD_NEXT, "execve");
+  return real(path, argv, envp);
 }
