@@ -69,6 +69,12 @@ void parse(option *c, const char *file)
 
 		if (strcmp(key, "-cargallow") == 0)
 		{
+			/* argallow is a fixed buffer; refuse entries that would not fit. */
+			if (strlen(c->argallow) + strlen(value) + 3 > sizeof(c->argallow))
+			{
+			  fprintf(stderr, "%s: -cargallow list is too long\n", file);
+			  exit(EXIT_FAILURE);
+			}
 			strcat(c->argallow, "$");
 			strcat(c->argallow, value);
 			strcat(c->argallow, "$");
@@ -340,6 +346,8 @@ void parse(option *c, const char *file)
 // defaultshell
 #ifdef HAVE_GETUSERSHELL
 
+	/* found may already be TRUE from syslog.facility. */
+	found = FALSE;
 	setusershell();
 	while ((shell = (char *)getusershell()))
 		if (!strcmp(shell, c->defshell))
@@ -356,7 +364,7 @@ void parse(option *c, const char *file)
 
 	if ((stat(c->defshell, &defshell_stat)) == -1)
 	{
-		fprintf(stderr, "default shell '%s': %s (%i)\n", value,
+		fprintf(stderr, "default shell '%s': %s (%i)\n", c->defshell,
 				strerror(errno), errno);
 		exit(EXIT_FAILURE);
 	}

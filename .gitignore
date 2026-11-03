@@ -13,3 +13,4 @@ stamp-h1
 src/.deps/
 autom4te.cache/
 .idea
+CLAUDE.md

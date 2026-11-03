@@ -53,6 +53,16 @@ session *find_session (const char *, const char *, time_t e, const char *);
 session *sort_list (session *);
 void show_sessions (void);
 
+/* True if NAME ends with SUFFIX. Checks the length first, so a short
+ * name cannot make the comparison read before the start of the string. */
+static int
+has_suffix (const char *name, const char *suffix)
+{
+  size_t nl = strlen (name), sl = strlen (suffix);
+
+  return nl >= sl && strcmp (name + nl - sl, suffix) == 0;
+}
+
 int
 main (int argc, char **argv, char **environ)
 {
@@ -174,11 +184,10 @@ main (int argc, char **argv, char **environ)
       if (dirp->d_type == DT_DIR)
         continue;
 #endif
-      char *last3 = &dirp->d_name[strlen(dirp->d_name)-3];
-      if (strcmp(last3, ".gz") == 0 || strcmp(last3, "bz2") == 0 ||strcmp(last3, ".xz") == 0)
-        { 
-          continue;
- 	} 
+      if (has_suffix (dirp->d_name, ".gz")
+          || has_suffix (dirp->d_name, ".bz2")
+          || has_suffix (dirp->d_name, ".xz"))
+        continue; 
 
       if (sscanf (dirp->d_name, match, from, to, type, &e, randstr) != 5)
 	{
@@ -210,9 +219,11 @@ main (int argc, char **argv, char **environ)
 
 	  if (f == (FILE *) 0)
 	    {
-	      fprintf (stderr, "%.100s: %.100s (%i)\n", s->script.str,
-		       strerror (errno), errno);
-	      exit (EXIT_FAILURE);
+	      /* One unreadable log should not hide the rest of the list. */
+	      fprintf (stderr, "[warning]: skipping %.100s: %.100s (%i)\n",
+		       s->script.str, strerror (errno), errno);
+	      free (s);
+	      continue;
 	    }
 
 	  if (fgets (s->id, BUFSIZ - 1, f) == NULL)
@@ -234,11 +245,15 @@ main (int argc, char **argv, char **environ)
 	  continue;
 	}
 
+      /* An input log only accompanies a script log; alone it is not a session. */
+      if (!strcmp (type, "input"))
+        continue;
+
       s = find_session (from, to, e, randstr);
 
       if (s == (session *) 0)
-	{
-	  s = session_malloc ();
+      {
+        s = session_malloc ();
 	  s->secs = 0;
 
 	  if (!strcmp (type, "script"))
@@ -330,6 +345,7 @@ main (int argc, char **argv, char **environ)
 	{
 	  FILE *f_script = fopen (s->script.str, "r");
 	  char buffer[BUFSIZ];
+	  size_t got;
 
 	  if (f_script == (FILE *) 0)
 	    {
@@ -339,8 +355,8 @@ main (int argc, char **argv, char **environ)
 	      exit (EXIT_FAILURE);
 	    }
 
-	  while (fread (&buffer, 1, BUFSIZ, f_script))
-	    fputs (buffer, stdout);
+	  while ((got = fread (buffer, 1, BUFSIZ, f_script)) > 0)
+	    fwrite (buffer, 1, got, stdout);
 
 	  fclose (f_script);
 
@@ -456,10 +472,10 @@ replay (const char *time, const char *script, int div, int maxwait)
 	  exit (EXIT_FAILURE);
 	}
 
-      if (ftime / div > 0.0001)
-	if (ftime / div > maxwait)
-	  ftime = maxwait / div;
       ftime = ftime / div;
+      /* MAXWAIT is in seconds of playback, so cap after scaling. */
+      if (ftime > maxwait)
+        ftime = maxwait;
 
       snprintf (timebuf, BUFSIZ - 1, "%f", ftime);
 
@@ -474,12 +490,19 @@ replay (const char *time, const char *script, int div, int maxwait)
       tv.tv_sec = (time_t) sec;
       tv.tv_usec = (time_t) usec;
 
-      if (b > 1024 * 1024 * 8)
-	{			/* 8MB */
+      /* Older sudosh wrote -1 when the pty read failed at the end of a
+       * session. Those entries carry no data to replay. */
+      if (b < 0)
+	continue;
+
+      /* sudosh never records more than one buffer at a time, so a larger
+       * count is corrupt or hostile and would overflow read_buffer. */
+      if (b > (int) sizeof (read_buffer))
+	{
 	  LL ();
 	  fprintf (stderr,
-		   "[error]: line %i: wanted to read %i bytes, but the limit is 8MB.\n",
-		   s_time.line, b);
+		   "[error]: line %i: wanted to read %i bytes, but the limit is %i.\n",
+		   s_time.line, b, (int) sizeof (read_buffer));
 	  exit (EXIT_FAILURE);
 	}
 

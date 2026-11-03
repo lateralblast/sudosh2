@@ -105,6 +105,7 @@ uid_t orig_euid;
 
 static void bye(int);
 static void newwinsize(int);
+static void on_stop(int);
 static void prepchild(struct pst *);
 static void rawmode(int);
 static int findms(struct pst *);
@@ -115,7 +116,8 @@ void set_file_flag(struct s_file *file, int flag);
 void unset_file_flag(struct s_file *file, int flag);
 void set_perms_and_close_file(struct s_file *file);
 void set_perms_and_open_file(struct s_file *file);
-int written = 0;
+/* Set by the SIGTERM and SIGCHLD handlers; the main loop acts on it. */
+static volatile sig_atomic_t stop_signal = 0;
 
 extern void parse(option *, const char *);
 
@@ -145,6 +147,7 @@ int main(int argc, char *argv[], char *environ[]) {
   struct stat ttybuf;
   int c;
   char argtest[BUFSIZ];
+  int allowed;
 
   user.vshell = NULL;
   user.shell.ptr = NULL;
@@ -194,13 +197,18 @@ int main(int argc, char *argv[], char *environ[]) {
         //              fprintf(stderr,"args=%s\n",c_args);
       }
 
+      /* An empty command must not fall through to an interactive shell. */
+      if (c_str[0] == 0) {
+        fprintf(stderr, "\"%s\" isn't allowed to be executed.\n", c_command);
+        exit(EXIT_FAILURE);
+      }
       if (c_str[0] != 0) {
         // Test for methods of escape
+        /* The whole command line is run by /bin/sh -c, so any shell
+         * metacharacter (including command substitution and newlines) would
+         * let an allowed first word run arbitrary commands. */
         if (strchr(sudosh_option.argallow, '*') == NULL &&
-            (strchr(c_command, ';') != NULL || strchr(c_command, '&') != NULL ||
-             strchr(c_command, '|') != NULL || strchr(c_command, '<') != NULL ||
-             strchr(c_command, '>') != NULL ||
-             strchr(c_command, '`') != NULL)) {
+            strpbrk(c_command, ";&|<>`$()\n\r") != NULL) {
           fprintf(stderr,
                   "\"%s\" isn't allowed to be executed with process or "
                   "redirect controls.\n",
@@ -211,10 +219,19 @@ int main(int argc, char *argv[], char *environ[]) {
         //              fprintf(stderr,"Testing c\n");
         // Make sure that c_str is in argallow
 
-        sprintf(argtest, "$%.100s$", c_str);
-        //              fprintf(stderr,"Testing for %s\n",argtest);
+        /* A word too long to fit is refused outright; truncating it could
+         * match an allow-list entry that is only a prefix of the word. */
+        allowed = 0;
+        if (strlen(c_str) <= sizeof(argtest) - 3) {
+          size_t n = strlen(c_str);
+          argtest[0] = '$';
+          memcpy(argtest + 1, c_str, n);
+          argtest[n + 1] = '$';
+          argtest[n + 2] = '\0';
+          allowed = strstr(sudosh_option.argallow, argtest) != NULL;
+        }
 
-        if (strstr(sudosh_option.argallow, argtest) != NULL ||
+        if (allowed ||
             strchr(sudosh_option.argallow, '*') != NULL) {
           FILE *f;
           snprintf(script.name, (size_t)BUFSIZ - 1,
@@ -278,11 +295,13 @@ int main(int argc, char *argv[], char *environ[]) {
 
   if (ttyname(0) != NULL) {
     if (stat(ttyname(0), &ttybuf) == 0) {
-      if ((getpwuid(ttybuf.st_uid)->pw_name) == NULL) {
+      struct passwd *tty_pw = getpwuid(ttybuf.st_uid);
+
+      if (tty_pw == NULL || tty_pw->pw_name == NULL) {
         fprintf(stderr, "I have no idea who you are.\n");
         exit(EXIT_FAILURE);
       }
-      snprintf(user.from, BUFSIZ, "%s", getpwuid(ttybuf.st_uid)->pw_name);
+      snprintf(user.from, BUFSIZ, "%s", tty_pw->pw_name);
     } else {
       fprintf(stderr, "Couldn't stat %s\n", ttyname(0));
       exit(EXIT_FAILURE);
@@ -292,6 +311,11 @@ int main(int argc, char *argv[], char *environ[]) {
     exit(EXIT_FAILURE);
   }
   user.pw = getpwuid((uid_t)getuid());
+
+  if (user.pw == NULL) {
+    fprintf(stderr, "I have no idea who you are.\n");
+    exit(EXIT_FAILURE);
+  }
 
   snprintf(user.home.str, BUFSIZ - 1, "HOME=%s", user.pw->pw_dir);
   snprintf(user.to_home.str, BUFSIZ, "%s", user.pw->pw_dir);
@@ -362,7 +386,7 @@ int main(int argc, char *argv[], char *environ[]) {
 #endif
 
   if (sudosh_option.priority != -1)
-    mysyslog(sudosh_option.priority, start_msg);
+    mysyslog(sudosh_option.priority, "%s", start_msg);
   rawmode(0);
 
   if (findms(&pspair) < 0) {
@@ -394,23 +418,27 @@ int main(int argc, char *argv[], char *environ[]) {
   sigaction(SIGWINCH, &sawinch, (struct sigaction *)0);
 
   memset(&saterm, 0, sizeof saterm);
-  saterm.sa_handler = bye;
-  sigaction(SIGTERM, &sawinch, (struct sigaction *)0);
+  saterm.sa_handler = on_stop;
+  sigaction(SIGTERM, &saterm, (struct sigaction *)0);
 
   memset(&sachild, 0, sizeof sachild);
-  sachild.sa_handler = bye;
+  sachild.sa_handler = on_stop;
   sigaction(SIGCHLD, &sachild, (struct sigaction *)0);
 
-  oldtime = time(NULL);
+  gettimeofday(&tv, NULL);
+  oldtime = tv.tv_sec + (double)tv.tv_usec / 1000000;
 
   while (n > 0) {
     fd_set readfds;
+
+    /* Signal handlers only set stop_signal, so the shutdown runs here. */
+    if (stop_signal)
+      bye((int)stop_signal);
 
     FD_ZERO(&readfds);
     FD_SET(pspair.mfd, &readfds);
     FD_SET(0, &readfds);
 
-    gettimeofday((struct timeval *)&tv, NULL);
     if (select(pspair.mfd + 1, &readfds, (fd_set *)0, (fd_set *)0,
                (struct timeval *)0) < 0) {
 
@@ -422,13 +450,19 @@ int main(int argc, char *argv[], char *environ[]) {
     }
 
     if (FD_ISSET(pspair.mfd, &readfds)) {
+      /* Stamp the output when it arrives, not when select was entered. */
+      gettimeofday(&tv, NULL);
       if ((n = read(pspair.mfd, iobuf, sizeof(iobuf))) > 0) {
         DO_WRITE(1, iobuf, n);
         script.bytes += DO_WRITE(script.fd, iobuf, n);
       }
       newtime = tv.tv_sec + (double)tv.tv_usec / 1000000;
-      snprintf(timing.str, BUFSIZ - 1, "%f %i\n", newtime - oldtime, n);
-      timing.bytes += DO_WRITE(timing.fd, &timing.str, strlen(timing.str));
+      /* Only record chunks that carry data; a failed read at session end
+       * used to leave a -1 entry behind. */
+      if (n > 0) {
+        snprintf(timing.str, BUFSIZ - 1, "%f %i\n", newtime - oldtime, n);
+        timing.bytes += DO_WRITE(timing.fd, &timing.str, strlen(timing.str));
+      }
       oldtime = newtime;
     }
 
@@ -436,30 +470,32 @@ int main(int argc, char *argv[], char *environ[]) {
       if ((n = read(0, iobuf, BUFSIZ)) > 0) {
         DO_WRITE(pspair.mfd, iobuf, n);
 #ifdef RECORDINPUT
-        switch (*iobuf) {
-        case '\r':
-          snprintf(input.str, BUFSIZ - 1, "\n");
-          break;
-        case 0x003:
-          snprintf(input.str, BUFSIZ - 1, "(CTRL-C)");
-          break;
-        case 0x004:
-          snprintf(input.str, BUFSIZ - 1, "(CTRL-D)\n");
-          break;
-        case 0x1a:
-          snprintf(input.str, BUFSIZ - 1, "(CTRL-Z)\n");
-          break;
-        case 0x1b:
-          snprintf(input.str, BUFSIZ - 1, "(ESC)");
-          break;
-        default:
-          DO_WRITE(input.fd, iobuf, 1);
-          written = 1;
-          break;
-        }
+        {
+          int i;
 
-        if (written == 0) {
-          DO_WRITE(input.fd, &input.str, strlen(input.str));
+          /* Log every byte of the read, not just the first one. */
+          for (i = 0; i < n; i++) {
+            switch ((unsigned char)iobuf[i]) {
+            case '\r':
+              DO_WRITE(input.fd, (void *)"\n", 1);
+              break;
+            case 0x003:
+              DO_WRITE(input.fd, (void *)"(CTRL-C)", 8);
+              break;
+            case 0x004:
+              DO_WRITE(input.fd, (void *)"(CTRL-D)\n", 9);
+              break;
+            case 0x1a:
+              DO_WRITE(input.fd, (void *)"(CTRL-Z)\n", 9);
+              break;
+            case 0x1b:
+              DO_WRITE(input.fd, (void *)"(ESC)", 5);
+              break;
+            default:
+              DO_WRITE(input.fd, &iobuf[i], 1);
+              break;
+            }
+          }
         }
 #endif
       }
@@ -605,6 +641,11 @@ static void rawmode(int ttyfd) {
 #endif
 }
 
+/* Runs in signal context, so it only records the request. */
+static void on_stop(int signum) {
+  stop_signal = signum;
+}
+
 static void bye(int signum) {
 #ifdef TCSETS
   (void)ioctl(0, TCSETS, &termorig);
@@ -658,19 +699,30 @@ void mysyslog(int pri, const char *fmt, ...) {
 
 int do_write(int fd, void *buf, size_t size, char *file, unsigned int line) {
   char str[BUFSIZ];
-  int s;
+  size_t done = 0;
+  ssize_t s;
 
   if (fd < 0)
     return -1;
 
-  if ((s = write(fd, buf, size)) < 0) {
-    snprintf(str, BUFSIZ - 1, "%s [%s, line %i]: %s\n", progname, file, line,
-             strerror(errno));
-    perror(str);
-    exit(EXIT_FAILURE);
+  /* write() may stop short, and may be interrupted by a signal such as
+   * SIGCHLD; keep going until everything is written or a real error occurs. */
+  while (done < size) {
+    s = write(fd, (char *)buf + done, size - done);
+    if (s < 0 && errno == EINTR)
+      continue;
+    if (s <= 0) {
+      if (s == 0)
+        errno = EIO;
+      snprintf(str, BUFSIZ - 1, "%s [%s, line %i]: %s\n", progname, file, line,
+               strerror(errno));
+      perror(str);
+      exit(EXIT_FAILURE);
+    }
+    done += (size_t)s;
   }
 
-  return s;
+  return (int)done;
 }
 
 #ifdef __linux__

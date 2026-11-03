@@ -2,7 +2,7 @@
 #
 %define origname sudosh2
 %define name sudosh2
-%define version 1.0.7
+%define version 1.3.1
 %define release 1.el5
 
 Name: %{name}
@@ -64,7 +64,7 @@ install -m 0744 sudosh.conf.tmp %{buildroot}/etc/sudosh.conf
 
 %files
 %defattr(-, root, root, 0755)
-%doc AUTHORS ChangeLog COPYING INSTALL NEWS README
+%doc AUTHORS CHANGELOG.md COPYING INSTALL NEWS README
 %doc %{_mandir}/man1/sudosh.1*
 %doc %{_mandir}/man5/sudosh.conf*
 %doc %{_mandir}/man8/sudosh-replay.8*
