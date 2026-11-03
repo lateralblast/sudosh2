@@ -4,10 +4,17 @@ Status: `[ ]` open, `[~]` in progress, `[x]` done.
 
 ## Open
 
+- [ ] Decide whether `-c arg allow` should restrict arguments and not just the command name. The limit is documented in the man pages; the behaviour is unchanged and needs a design decision.
 - [ ] Commit the work (the user makes commits). Make sure `build-test/*.sh` and `build-test/regress_pty.py` are committed with their executable bits.
 
 ## Done
 
+- [x] `parse()` reads `sudosh.conf` with `fgets`, which splits a line longer than the buffer into two lines; the second part is then read as a setting of its own. (1.7.2)
+- [x] `int2smalltime` drops minutes and seconds once hours are shown, so a 1 hour 1 minute session is listed as `1h`. (1.7.1)
+- [x] sudosh gives no warning when a user name contains the file name delimiter, so the session is recorded but `sudosh-replay` cannot list it. (1.7.0)
+- [x] `sudosh-replay` cannot parse user names longer than 32 characters: it reads at most 32 although sudosh writes up to 128. (1.6.9)
+- [x] `rawmode()` and the terminal restore sit inside `#ifdef TCGETS`, so on BSD the terminal may never be put in raw mode. Use the portable `tcgetattr`/`tcsetattr` calls, and test on a BSD system. (1.6.8)
+- [x] Check the new `regression` job and the strict-build step in the GitHub Actions workflow. They have only been run locally, and the tests rely on the runner's username and tools (`rsync`, `python3`, `gcc`). (1.6.7)
 - [x] Investigate why the syslog-capture regression test fails under AddressSanitizer (suspected conflict with the preload test library; passes in the normal build). (1.6.6)
 - [x] `sudosh.spec` still creates `/var/log/sudosh` with mode 0733; it should be 1733 like the code and man page. (1.6.5)
 - [x] `findms()` passes a NULL `ptsname()` result to `open()`. It was not a crash (the call fails with EFAULT and sudosh exits with status 1), but the error was unclear. (1.6.4)

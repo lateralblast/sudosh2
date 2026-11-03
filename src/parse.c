@@ -29,6 +29,8 @@ void parse(option *c, const char *file)
 	char *shell;
 	int found = FALSE;
 	unsigned int x = 0;
+	size_t linelen;
+	int ch;
 
 	bzero(c, sizeof(struct s_option));
 	// Set up some defaults
@@ -53,6 +55,17 @@ void parse(option *c, const char *file)
 	}
 	while (fgets(line, BUFSIZ - 1, f))
 	{
+		/* A line longer than the buffer comes back in pieces, and the later
+		 * pieces would be read as settings of their own (a long comment could
+		 * hide one). Ignore the whole line instead. */
+		linelen = strlen(line);
+		if (linelen > 0 && line[linelen - 1] != '\n' && !feof(f))
+		{
+			fprintf(stderr, "%s: line too long, ignored\n", file);
+			while ((ch = fgetc(f)) != '\n' && ch != EOF)
+				;
+			continue;
+		}
 		p = strchr(line, '=');
 		if (!p)
 		{

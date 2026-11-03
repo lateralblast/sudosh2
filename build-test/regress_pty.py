@@ -12,6 +12,8 @@ MODE is one of:
   timing   run "sleep 2; echo done; exit"
   envshow  print the FOO and USER variables the session shell sees
   fds      print the file descriptors the session shell holds open
+  rawmode  print RAW=1 if sudosh put its terminal in raw mode
+  banner   print the first start-up message that mentions the delimiter
   emptyc   run "sudosh -c ''" with no input
   wait     run sudosh with no input
 
@@ -28,6 +30,7 @@ import re
 import select
 import signal
 import sys
+import termios
 import time
 
 
@@ -45,7 +48,10 @@ def drain(fd, seconds, sink):
                 return
 
 
-def run(argv, keys=(), sig=None, lead=0.5):
+PROBE = {}
+
+
+def run(argv, keys=(), sig=None, lead=0.5, hook=None):
     """Run argv in a pty. Returns (status line, captured output text)."""
     env = dict(os.environ, SHELL=os.environ.get("REGRESS_SHELL", "/bin/sh"), TERM="dumb")
     if os.environ.get("REGRESS_PRELOAD"):
@@ -56,6 +62,8 @@ def run(argv, keys=(), sig=None, lead=0.5):
 
     out = []
     drain(fd, lead, out)
+    if hook is not None:
+        hook(fd)
     if sig is not None:
         os.kill(pid, sig)
     for key in keys:
@@ -113,6 +121,18 @@ def main():
         status, text = run(argv, keys=[b"echo FDLIST=$(ls /proc/self/fd | tr '\\n' ' ')=\r", b"exit\r"])
         print(status)
         print("FDS=" + marker(text, "FDLIST"))
+    elif mode == "rawmode":
+        def check_raw(fd):
+            lflag = termios.tcgetattr(fd)[3]
+            PROBE["raw"] = int(not (lflag & (termios.ICANON | termios.ECHO | termios.ISIG)))
+
+        print(run(argv, keys=[b"exit\r"], hook=check_raw)[0])
+        print("RAW=%d" % PROBE.get("raw", 0))
+    elif mode == "banner":
+        status, text = run(argv, keys=[b"exit\r"])
+        print(status)
+        lines = [l for l in text.split("\n") if "delimiter" in l]
+        print("BANNER=" + (lines[0] if lines else ""))
     elif mode == "emptyc":
         print(run([binary, "-c", ""])[0])
     elif mode == "wait":

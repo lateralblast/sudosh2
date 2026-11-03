@@ -6,6 +6,42 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-11-03
+
+### Fixed
+
+- A line in `sudosh.conf` that is longer than the read buffer is ignored whole, with a warning. It used to be split in two and the second half read as a setting of its own, so a very long comment line could hide a setting.
+
+## [1.7.1] - 2026-11-03
+
+### Fixed
+
+- Durations in the `sudosh-replay` listing show every non-zero unit, such as `1h1m1s`. Minutes and seconds were dropped once the session was an hour long, so `1h1m1s` was shown as `1h`.
+
+## [1.7.0] - 2026-11-03
+
+### Added
+
+- sudosh prints a warning at the start of a session, and for `-c`, when a user name contains the file name delimiter. The session is recorded, but `sudosh-replay` splits names at the delimiter and cannot list it. The warning says to choose another delimiter in `sudosh.conf`.
+
+## [1.6.9] - 2026-11-03
+
+### Fixed
+
+- `sudosh-replay` lists and replays sessions whose user names are up to 128 characters long, the length sudosh writes. It read only 32, so longer names were reported as invalid files.
+
+## [1.6.8] - 2026-11-03
+
+### Fixed
+
+- The terminal is put in raw mode, and restored on exit, with `tcgetattr` and `tcsetattr`. The Linux-only `TCGETS` and `TCSETS` ioctls were used before, inside `#ifdef`s, so on other systems such as BSD the terminal was never put in raw mode. Not tested on BSD.
+
+## [1.6.7] - 2026-11-03
+
+### Fixed
+
+- The regression suite no longer needs the automake version that made the committed `configure` and `Makefile.in`. On a machine with an older automake (such as Ubuntu 24.04) it failed to build. The CI job's steps now pass in an Ubuntu 24.04 container, as a non-root user, from a fresh checkout.
+
 ## [1.6.6] - 2026-11-03
 
 ### Changed

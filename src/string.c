@@ -12,50 +12,31 @@ lc (char *str)
 char *
 int2smalltime (int t)
 {
-  static char time_string[BUFSIZ], *fill;
+  static char time_string[BUFSIZ];
+  size_t used = 0;
   int days, hrs, mins, secs;
 
   if (t == -1)
     return "Never";
 
-  if (t == 0)
+  if (t <= 0)
     return "0s";
 
   days = t / 86400;
   hrs = (t / 3600) % 24;
   mins = (t / 60) % 60;
   secs = t % 60;
-  fill = time_string;
+  time_string[0] = '\0';
 
+  /* Show every unit that is not zero, so 3661 seconds is "1h1m1s". */
   if (days)
-    {
-      snprintf (fill, BUFSIZ - 1, "%dd", days);
-
-      while (*fill)
-	fill++;
-    }
+    used += snprintf (time_string + used, sizeof (time_string) - used, "%dd", days);
   if (hrs)
-    {
-      snprintf (fill, BUFSIZ - 1, "%dh", hrs);
-      while (*fill)
-	fill++;
-
-      *fill++ = 0;
-      return time_string;
-    }
+    used += snprintf (time_string + used, sizeof (time_string) - used, "%dh", hrs);
   if (mins)
-    {
-      snprintf (fill, BUFSIZ - 1, "%dm", mins);
-      while (*fill)
-	fill++;
-    }
+    used += snprintf (time_string + used, sizeof (time_string) - used, "%dm", mins);
   if (secs)
-    {
-      snprintf (fill, BUFSIZ - 1, "%ds", secs);
-      while (*fill)
-	fill++;
-    }
+    used += snprintf (time_string + used, sizeof (time_string) - used, "%ds", secs);
 
-  *fill++ = 0;
   return time_string;
 }

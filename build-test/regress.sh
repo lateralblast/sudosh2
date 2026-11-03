@@ -26,7 +26,12 @@ build() {
     local dir="$T/$name"
     mkdir -p "$dir"
     rsync -a --exclude .git "$ROOT/" "$dir/" || return 1
-    (cd "$dir" && ./configure "$@" >"$T/$name.configure.log" 2>&1 &&
+    # The committed generated files may come from a different automake than the
+    # one installed here. Mark them up to date, in dependency order, so make does
+    # not try to regenerate them (as when building from a release tarball).
+    (cd "$dir" && touch aclocal.m4 && touch configure config.h.in &&
+        touch Makefile.in src/Makefile.in &&
+        ./configure "$@" >"$T/$name.configure.log" 2>&1 &&
         make CFLAGS='-Wall -Werror -pedantic' >"$T/$name.make.log" 2>&1)
 }
 
@@ -121,6 +126,15 @@ if [ "$logged" = "echo hello world" ]; then
     pass "the -c log records the whole command line"
 else
     fail "the -c log records the whole command line (got '$logged')"
+fi
+
+echo "=== terminal modes (pty)"
+reset_logs
+raw=$(python3 "$PTY" rawmode "$SUDOSH" | sed -n 's/^RAW=//p')
+if [ "$raw" = 1 ]; then
+    pass "sudosh puts its terminal in raw mode for the session"
+else
+    fail "sudosh puts its terminal in raw mode for the session (RAW=$raw)"
 fi
 
 echo "=== session environment (pty)"
@@ -229,6 +243,22 @@ else
         pass "writes that accept one byte at a time still reach the shell and the log"
     else
         fail "writes that accept one byte at a time still reach the shell and the log (got $out, $count)"
+    fi
+
+    reset_logs
+    banner=$(REGRESS_PRELOAD="$PRELOAD" REGRESS_FAKE_UID=4242 REGRESS_FAKE_NAME='a-b' \
+        python3 "$PTY" banner "$SUDOSH" | sed -n 's/^BANNER=//p')
+    if echo "$banner" | grep -q 'delimiter'; then
+        pass "a user name containing the delimiter produces a warning"
+    else
+        fail "a user name containing the delimiter produces a warning (got '$banner')"
+    fi
+    reset_logs
+    banner=$(python3 "$PTY" banner "$SUDOSH" | sed -n 's/^BANNER=//p')
+    if [ -z "$banner" ]; then
+        pass "an ordinary user name produces no delimiter warning"
+    else
+        fail "an ordinary user name produces no delimiter warning (got '$banner')"
     fi
 
     reset_logs
@@ -445,6 +475,48 @@ else
     fail "a recorded chunk containing a NUL byte is replayed in full (got $size bytes of 5)"
 fi
 
+reset_logs
+longfrom=$(printf 'a%.0s' $(seq 40)); longto=$(printf 'b%.0s' $(seq 40))
+printf 'real\n' > "$T/logs/$longfrom-$longto-script-1700000000-GGGG"
+"$REPLAY" >"$T/out" 2>"$T/err"
+if grep -q "$longfrom-$longto-1700000000-GGGG" "$T/out"; then
+    pass "user names longer than 32 characters are listed"
+else
+    fail "user names longer than 32 characters are listed ($(head -c 150 "$T/err"))"
+fi
+"$REPLAY" "$longfrom-$longto-1700000000-GGGG" 0 >"$T/out" 2>/dev/null
+if [ "$(cat "$T/out")" = real ]; then
+    pass "a session with long user names can be replayed by its ID"
+else
+    fail "a session with long user names can be replayed by its ID"
+fi
+
+echo "=== duration text"
+cat > "$T/timetest.c" <<'EOF'
+#include <stdio.h>
+char *int2smalltime(int t);
+int main(void)
+{
+    int v[] = {-1, 0, 59, 60, 3600, 3661, 86400, 90061};
+    int i;
+    for (i = 0; i < (int)(sizeof v / sizeof v[0]); i++)
+        printf("%s ", int2smalltime(v[i]));
+    printf("\n");
+    return 0;
+}
+EOF
+if gcc -Wall -I"$T/main" -o "$T/timetest" "$T/timetest.c" "$T/main/src/string.c" 2>"$T/time.build.log"; then
+    got=$("$T/timetest")
+    want="Never 0s 59s 1m 1h 1h1m1s 1d 1d1h1m1s "
+    if [ "$got" = "$want" ]; then
+        pass "a duration shows every non-zero unit"
+    else
+        fail "a duration shows every non-zero unit (got: $got)"
+    fi
+else
+    fail "duration test build (see $T/time.build.log)"
+fi
+
 echo "=== random session suffix"
 cat > "$T/randtest.c" <<'EOF'
 #include <stdio.h>
@@ -532,6 +604,16 @@ if [ -d "$T/cmtlogs" ] && ! ls "$T" | grep -q 'cmtlogs#'; then
     pass "an inline # comment is not part of the value"
 else
     fail "an inline # comment is not part of the value ($(ls "$T" | grep cmtlogs | tr '\n' ' '))"
+fi
+
+rm -rf "$T/chunk2dir"
+longjunk=$(head -c 8189 /dev/zero | tr '\0' a)
+write_conf "$T/logs" "#${longjunk}logdir=$T/chunk2dir"
+"$REPLAY" >/dev/null 2>"$T/err"
+if [ ! -e "$T/chunk2dir" ] && grep -q 'line too long' "$T/err"; then
+    pass "a very long config line is ignored whole, not split into settings"
+else
+    fail "a very long config line is ignored whole, not split into settings ($(ls "$T" | grep chunk2 | tr '\n' ' ')$(head -c 100 "$T/err"))"
 fi
 
 echo "=== configuration validation"

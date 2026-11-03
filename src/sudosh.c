@@ -107,6 +107,7 @@ uid_t orig_euid;
 static void bye(int);
 static void newwinsize(int);
 static void on_stop(int);
+static void check_delimiter(void);
 static void prepchild(struct pst *);
 static void rawmode(int);
 static int findms(struct pst *);
@@ -237,6 +238,7 @@ int main(int argc, char *argv[], char *environ[]) {
         int fd;
         char logline[BUFSIZ];
         char *q;
+        check_delimiter();
         snprintf(script.name, (size_t)BUFSIZ - 1,
                  "%.1024s/%.128s%c%.128s%cinteractive%c%ld%c%.128s",
                  sudosh_option.logdir, user.from, sudosh_option.fdl, user.to,
@@ -331,6 +333,8 @@ int main(int argc, char *argv[], char *environ[]) {
     fprintf(stderr, "I have no idea who you are.\n");
     exit(EXIT_FAILURE);
   }
+
+  check_delimiter();
 
   snprintf(user.home.str, BUFSIZ - 1, "HOME=%s", user.pw->pw_dir);
   snprintf(user.to_home.str, BUFSIZ, "%s", user.pw->pw_dir);
@@ -623,9 +627,7 @@ static void prepchild(struct pst *pst) {
       close(i);
   }
 
-#ifdef TCSETS
-  (void)ioctl(0, TCSETS, &termorig);
-#endif
+  (void)tcsetattr(0, TCSANOW, &termorig);
   (void)ioctl(0, TIOCSWINSZ, &winorig);
 
   if (setuid(getuid()) != 0) {
@@ -670,12 +672,12 @@ static void prepchild(struct pst *pst) {
 static void rawmode(int ttyfd) {
   static struct termios termnew;
 
-#ifdef TCGETS
-  if (ioctl(ttyfd, TCGETS, &termorig) == -1) {
-    perror("ioctl TCGETS failed");
+  /* tcgetattr/tcsetattr are portable; the TCGETS/TCSETS ioctls are Linux only,
+   * so on other systems the terminal was never put in raw mode. */
+  if (tcgetattr(ttyfd, &termorig) == -1) {
+    perror("tcgetattr failed");
     exit(EXIT_FAILURE);
   }
-#endif
 
   if (ioctl(ttyfd, TIOCGWINSZ, &winorig) == -1) {
     perror("ioctl TIOCGWINSZ failed");
@@ -691,9 +693,19 @@ static void rawmode(int ttyfd) {
   termnew.c_cflag = termorig.c_cflag;
   termnew.c_lflag = 0;
 
-#ifdef TCSETS
-  (void)ioctl(ttyfd, TCSETS, &termnew);
-#endif
+  (void)tcsetattr(ttyfd, TCSANOW, &termnew);
+}
+
+/* sudosh-replay splits file names at the delimiter, so a session recorded for
+ * a user name that contains it is saved but cannot be listed. Say so. */
+static void check_delimiter(void) {
+  if (strchr(user.from, sudosh_option.fdl) != NULL ||
+      strchr(user.to, sudosh_option.fdl) != NULL)
+    fprintf(stderr,
+            "Warning: a user name contains the file name delimiter '%c', so "
+            "sudosh-replay will not list this session. Choose another "
+            "delimiter in sudosh.conf.\n",
+            sudosh_option.fdl);
 }
 
 /* Runs in signal context, so it only records the request. */
@@ -702,9 +714,7 @@ static void on_stop(int signum) {
 }
 
 static void bye(int signum) {
-#ifdef TCSETS
-  (void)ioctl(0, TCSETS, &termorig);
-#endif
+  (void)tcsetattr(0, TCSANOW, &termorig);
 
   if (seteuid(orig_euid) != 0) {
     perror("Reacquiring uid 0 failed");

@@ -161,7 +161,7 @@ main (int argc, char **argv, char **environ)
   parse (&config_option, sysconfdir);
 
   snprintf (match, BUFSIZ - 1,
-	    "%%32[^%c]%c%%32[^%c]%c%%32[^%c]%c%%ld%c%%64[A-Za-z0-9]",
+	    "%%128[^%c]%c%%128[^%c]%c%%32[^%c]%c%%ld%c%%64[A-Za-z0-9]",
 	    config_option.fdl, config_option.fdl, config_option.fdl,
 	    config_option.fdl, config_option.fdl, config_option.fdl,
 	    config_option.fdl);
@@ -388,7 +388,7 @@ main (int argc, char **argv, char **environ)
       session *s;
 
       snprintf (match, BUFSIZ - 1,
-		"%%32[^%c]%c%%32[^%c]%c%%ld%c%%64[A-Za-z0-9]",
+		"%%128[^%c]%c%%128[^%c]%c%%ld%c%%64[A-Za-z0-9]",
 		config_option.fdl, config_option.fdl, config_option.fdl,
 		config_option.fdl, config_option.fdl);
 
