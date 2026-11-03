@@ -8,9 +8,16 @@
  *   REGRESS_FAKE_SHELLS  getusershell() lists only /nonexistent/shell
  *   REGRESS_SHORT_WRITE  write() accepts at most one byte per call
  *   REGRESS_SYSLOG_LOG   syslog() appends each formatted message to this file
+ *   REGRESS_NOW          time() returns this many seconds since the epoch
+ *   REGRESS_EXECL_FAIL   execl() fails with ENOENT
+ *   REGRESS_FROZEN_CLOCK gettimeofday() and getpid() always return the same values
+ *   REGRESS_PTSNAME_FAIL ptsname() returns NULL
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>
+#include <errno.h>
+#include <sys/time.h>
+#include <time.h>
 #include <pwd.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -113,19 +120,109 @@ ssize_t write(int fd, const void *buf, size_t n)
   return real(fd, buf, n);
 }
 
-void syslog(int priority, const char *format, ...)
+static void record_syslog(const char *format, va_list ap)
 {
   const char *path = getenv("REGRESS_SYSLOG_LOG");
   char buf[8192];
-  va_list ap;
   FILE *f;
 
-  (void)priority;
   if (path && (f = fopen(path, "a")) != NULL) {
-    va_start(ap, format);
     vsnprintf(buf, sizeof buf, format, ap);
-    va_end(ap);
     fprintf(f, "%s\n", buf);
     fclose(f);
   }
+}
+
+void syslog(int priority, const char *format, ...)
+{
+  va_list ap;
+
+  (void)priority;
+  va_start(ap, format);
+  record_syslog(format, ap);
+  va_end(ap);
+}
+
+/* Optimised, fortified builds call this instead of syslog(). */
+void __syslog_chk(int priority, int flag, const char *format, ...)
+{
+  va_list ap;
+
+  (void)priority;
+  (void)flag;
+  va_start(ap, format);
+  record_syslog(format, ap);
+  va_end(ap);
+}
+
+time_t time(time_t *t)
+{
+  static time_t (*real)(time_t *);
+  const char *now = getenv("REGRESS_NOW");
+
+  if (now) {
+    time_t v = (time_t)atoll(now);
+
+    if (t)
+      *t = v;
+    return v;
+  }
+  if (!real)
+    real = (time_t (*)(time_t *))dlsym(RTLD_NEXT, "time");
+  return real(t);
+}
+
+int execl(const char *path, const char *arg, ...)
+{
+  const char *argv[64];
+  va_list ap;
+  int n = 0;
+
+  if (getenv("REGRESS_EXECL_FAIL")) {
+    errno = ENOENT;
+    return -1;
+  }
+  argv[n++] = arg;
+  va_start(ap, arg);
+  while (n < 63 && (argv[n] = va_arg(ap, const char *)) != NULL)
+    n++;
+  va_end(ap);
+  argv[n] = NULL;
+  return execv(path, (char *const *)argv);
+}
+
+int gettimeofday(struct timeval *tv, void *tz)
+{
+  static int (*real)(struct timeval *, void *);
+
+  if (getenv("REGRESS_FROZEN_CLOCK")) {
+    tv->tv_sec = 1700000000;
+    tv->tv_usec = 123456;
+    return 0;
+  }
+  if (!real)
+    real = (int (*)(struct timeval *, void *))dlsym(RTLD_NEXT, "gettimeofday");
+  return real(tv, tz);
+}
+
+pid_t getpid(void)
+{
+  static pid_t (*real)(void);
+
+  if (getenv("REGRESS_FROZEN_CLOCK"))
+    return 4242;
+  if (!real)
+    real = (pid_t (*)(void))dlsym(RTLD_NEXT, "getpid");
+  return real();
+}
+
+char *ptsname(int fd)
+{
+  static char *(*real)(int);
+
+  if (getenv("REGRESS_PTSNAME_FAIL"))
+    return NULL;
+  if (!real)
+    real = (char *(*)(int))dlsym(RTLD_NEXT, "ptsname");
+  return real(fd);
 }

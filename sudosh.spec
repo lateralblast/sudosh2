@@ -2,7 +2,7 @@
 #
 %define origname sudosh2
 %define name sudosh2
-%define version 1.4.2
+%define version 1.6.6
 %define release 1.el5
 
 Name: %{name}
@@ -71,7 +71,7 @@ install -m 0744 sudosh.conf.tmp %{buildroot}/etc/sudosh.conf
 %{_bindir}/sudosh
 %{_bindir}/sudosh-replay
 %config(noreplace) %{_sysconfdir}/sudosh.conf
-%dir %attr(0733 root root) /var/log/sudosh
+%dir %attr(1733 root root) /var/log/sudosh
 
 %changelog
 * Tue Jul 16 2019 - 1.0.7

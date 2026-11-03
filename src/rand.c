@@ -12,9 +12,22 @@ myrand (void)
 
   if (!seeded)
     {
-      gettimeofday (&tv, (struct timezone *) 0);
-      seed =
-	(tv.tv_sec % 10000) * 523 + tv.tv_usec * 13 + (getpid () % 1000) * 983;
+      int fd = open ("/dev/urandom", O_RDONLY);
+      ssize_t got = -1;
+
+      /* The clock and pid alone allow only a few million different seeds, so
+       * use the system's random source and fall back to them only if needed. */
+      if (fd != -1)
+	{
+	  got = read (fd, &seed, sizeof (seed));
+	  close (fd);
+	}
+      if (got != (ssize_t) sizeof (seed))
+	{
+	  gettimeofday (&tv, (struct timezone *) 0);
+	  seed =
+	    (tv.tv_sec % 10000) * 523 + tv.tv_usec * 13 + (getpid () % 1000) * 983;
+	}
       srand (seed);
       seeded = 1;
     }

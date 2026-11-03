@@ -6,6 +6,150 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+## [1.6.6] - 2026-11-03
+
+### Changed
+
+- The LD_PRELOAD test library also hooks `__syslog_chk`, which optimised builds call instead of `syslog`. The syslog test used to fail in a build with optimisation and sanitizers; the whole regression suite now passes under AddressSanitizer and UBSan.
+
+## [1.6.5] - 2026-11-03
+
+### Fixed
+
+- The RPM spec creates `/var/log/sudosh` with mode 1733, matching the code and man page. It still said 0733, so a package install and `rpm -V` disagreed with what sudosh sets.
+
+## [1.6.4] - 2026-11-03
+
+### Changed
+
+- sudosh checks the result of `ptsname()` and reports `ptsname` as the failure. A NULL result was passed on to `open()`, which failed harmlessly with a less clear message.
+
+## [1.6.3] - 2026-11-03
+
+### Fixed
+
+- The random part of session file names is seeded from `/dev/urandom`. The clock and process id alone allowed only a few million different values, so a name could be guessed; they are used only if the system source cannot be read.
+
+## [1.6.2] - 2026-11-03
+
+### Fixed
+
+- The session shell does not inherit file descriptors above 99. Only descriptors 3 to 99 were closed before, so a higher one open in the caller leaked into the shell.
+
+## [1.6.1] - 2026-11-03
+
+### Fixed
+
+- The session environment sets `USER` as well as `LOGNAME`, `HOME`, `SHELL`, `TERM` and `PATH`. It was never set, though the 2005 changelog said it was.
+
+## [1.6.0] - 2026-11-03
+
+### Fixed
+
+- The config parser passes `isspace` an unsigned character, so a byte above 127 in `sudosh.conf` no longer makes the call undefined.
+
+## [1.5.9] - 2026-11-03
+
+### Fixed
+
+- sudosh does not call syslog for a shell that is not in `/etc/shells` when syslog is not configured. It passed an invalid priority of -1.
+
+## [1.5.8] - 2026-11-03
+
+### Fixed
+
+- sudosh reports "Could not determine a valid shell" instead of crashing when `SHELL` is unset and the password entry has no shell. The check that handled this ran after the code that crashed.
+
+## [1.5.7] - 2026-11-03
+
+### Fixed
+
+- The terminal is put in raw mode by setting `VMIN` and `VTIME`. It set `VEOF`, which is the same setting on Linux but not on BSD, where reads could return nothing and end the session at once.
+
+## [1.5.6] - 2026-11-03
+
+### Fixed
+
+- Log file names use a `long` timestamp. After 2038-01-19 the `int` timestamp wrapped negative, which put the file name delimiter into the name so `sudosh-replay` could not list the session.
+
+## [1.5.5] - 2026-11-03
+
+### Fixed
+
+- `sudosh -c` prints an error and exits with status 127 when it cannot run `/bin/sh`. It exited 0 without a message, so a command that never ran looked successful.
+
+## [1.5.4] - 2026-11-03
+
+### Fixed
+
+- A `#` in `sudosh.conf` starts a comment that runs to the end of the line, including after a value. It used to become part of the value, so `logdir = /var/log/sudosh # recordings` created a directory with the comment in its name.
+
+## [1.5.3] - 2026-11-03
+
+### Fixed
+
+- `clearenvironment = false` keeps the environment, as the man page says. `false`, `off`, `0` and `disabled` are accepted as well as values starting with `no`, in any case. Only values starting with `no` worked before.
+
+## [1.5.2] - 2026-11-03
+
+### Changed
+
+- The man pages warn that `-c arg allow` checks only the command name, not its arguments, so an allowed program with options that run programs or write files (find -exec, find -fprint, rsync -e, scp -S) can be used to get around it.
+
+## [1.5.1] - 2026-11-03
+
+### Fixed
+
+- The `-c` log records the whole command line, with its arguments, not just the first word. `sudosh-replay` shows it in the ID column.
+
+## [1.5.0] - 2026-11-03
+
+### Fixed
+
+- A dropped connection (SIGHUP), SIGINT or SIGQUIT now ends the session through the normal shutdown, so the recordings are closed, set read-only and the stop message is logged. A write error on the terminal does the same instead of exiting at once. Before, the recordings were left writable (mode 600) with no end of session entry.
+
+## [1.4.9] - 2026-11-03
+
+### Fixed
+
+- `sudosh-replay` writes each recorded chunk at its full length. A NUL byte in the output cut the chunk short, so sessions that printed binary data replayed incomplete.
+
+## [1.4.8] - 2026-11-03
+
+### Fixed
+
+- `sudosh-replay` waits for the recorded length of short pauses. Fractions with a leading zero (such as 0.09 s) were read as octal, so most pauses under 0.1 s were skipped.
+
+## [1.4.7] - 2026-11-03
+
+### Fixed
+
+- Security: `sudosh-replay` shows control characters in log file names and headers as `?`, so a forged log file can no longer send escape sequences to the terminal that lists or replays it.
+
+## [1.4.6] - 2026-11-03
+
+### Fixed
+
+- Security: `sudosh-replay` ignores a log file that is not owned by the user named in its file name (or by root). The log directory is writable by everyone, so anyone could plant a recording that looked genuine.
+
+## [1.4.5] - 2026-11-03
+
+### Fixed
+
+- `sudosh-replay` skips anything in the log directory that is not a regular file. A planted FIFO used to make it hang, and symlinks were followed. The `linux` macro check for directories, which is undefined in strict ISO mode, is replaced.
+
+## [1.4.4] - 2026-11-03
+
+### Fixed
+
+- `sudosh-replay` lists the other sessions when one time file is malformed or unreadable. That session shows a duration of 0 and a warning, instead of the whole listing stopping.
+
+## [1.4.3] - 2026-11-03
+
+### Fixed
+
+- `sudosh-replay` no longer crashes on a log file whose name has an out-of-range timestamp. The date shows as `(bad date)`.
+
 ## [1.4.2] - 2026-11-03
 
 ### Changed

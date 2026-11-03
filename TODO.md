@@ -8,6 +8,30 @@ Status: `[ ]` open, `[~]` in progress, `[x]` done.
 
 ## Done
 
+- [x] Investigate why the syslog-capture regression test fails under AddressSanitizer (suspected conflict with the preload test library; passes in the normal build). (1.6.6)
+- [x] `sudosh.spec` still creates `/var/log/sudosh` with mode 0733; it should be 1733 like the code and man page. (1.6.5)
+- [x] `findms()` passes a NULL `ptsname()` result to `open()`. It was not a crash (the call fails with EFAULT and sudosh exits with status 1), but the error was unclear. (1.6.4)
+- [x] The session suffix generator is seeded from the clock and pid only; seed it from `/dev/urandom`. (1.6.3)
+- [x] The session child closes only file descriptors 3 to 99, so higher inherited descriptors leak into the shell. (1.6.2)
+- [x] `USER` is not set in the session environment, though the 2005 changelog says it is. (1.6.1)
+- [x] `parse.c` passes a signed `char` to `isspace()`. (1.6.0)
+- [x] The "not in /etc/shells" `mysyslog` call is missing the `priority != -1` guard. (1.5.9)
+- [x] A NULL `pw_shell` would crash `strcmp` in the shell check. (1.5.8)
+- [x] `rawmode()` sets `c_cc[VEOF]` instead of `c_cc[VMIN]`, which could end the session at once on BSD. (1.5.7)
+- [x] Log file names use `(int)` time, so timestamps wrap negative after 2038-01-19 and replay cannot parse the names. (1.5.6)
+- [x] A failed `exec` in the `-c` path exits 0 with no message. (1.5.5)
+- [x] Inline `#` comments on a `sudosh.conf` line become part of the value. (1.5.4)
+- [x] `clearenvironment = false` still clears the environment; accept false, off, 0 and disabled as well as values starting with no. (1.5.3)
+- [x] Document that `-c arg allow` checks only the command name, so allowed programs with command-running options (`find -fprint`, `rsync -e`, `scp -S`) are escapes. (1.5.2)
+- [x] The `-c` interactive log records only the first word of the command, not its arguments. (1.5.1)
+- [x] SIGHUP (a dropped connection) kills sudosh without finalising the logs (mode 600, no stop message); handle it, and finish the shutdown on write errors. (1.5.0)
+- [x] Replay stops a recorded chunk at the first NUL byte (`fputs`); write the exact length. (1.4.9)
+- [x] Replay pauses under 0.1 s vanish: the fractional part is parsed by `%i`, which reads a leading zero as octal. (1.4.8)
+- [x] `sudosh-replay` prints names and headers from log files raw, so forged files can inject terminal escape codes; replace control characters. (1.4.7)
+- [x] `sudosh-replay` trusts any file in the log directory; accept a file only if its owner matches the `to` user in its name. (1.4.6)
+- [x] `sudosh-replay` hangs on a FIFO planted in the log directory; skip anything that is not a regular file. This also replaces the `#ifdef linux` directory check, which is undefined in strict ISO mode. (1.4.5)
+- [x] `sudosh-replay` exits instead of skipping the session when one time file is malformed (`count_dur`), hiding every other session. (1.4.4)
+- [x] `sudosh-replay` segfaults when a log file name has an out-of-range timestamp (`localtime` returns NULL). (1.4.3)
 - [x] 1.0.7 release date dealt with: the `v1.0.7` tag date (2019-07-16) is used; the 2015 date in the old ChangeLog is not (1.4.2).
 - [x] `debian/changelog` archived; not maintained for this release (1.4.1).
 - [x] Low-priority review findings fixed (1.3.6–1.4.0): `ispunct` on an unsigned char, newline on the replay `invalid float` messages (1.3.7), `read(0)` retried on EINTR (1.3.8), `-c` interactive log created with `O_EXCL` (1.3.9), redundant `c_str` check removed (1.4.0). No automated tests yet for these five.

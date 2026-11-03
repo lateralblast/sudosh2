@@ -13,7 +13,8 @@ PTY="$ROOT/build-test/regress_pty.py"
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 FAILS=0
-ID="alice-root-1700000000-ABCDEFGHIJKLMNOP"
+ME=$(id -un)
+ID="alice-$ME-1700000000-ABCDEFGHIJKLMNOP"
 
 pass() { echo "PASS: $1"; }
 fail() { echo "FAIL: $1"; FAILS=$((FAILS + 1)); }
@@ -111,6 +112,48 @@ else
     fail "an oversized -cargallow list is refused (exit $rc)"
 fi
 
+echo "=== -c log"
+reset_logs
+write_conf "$T/logs" "-cargallow = echo"
+"$SUDOSH" -c 'echo hello world' >/dev/null 2>&1
+logged=$(head -1 "$T"/logs/*-interactive-* 2>/dev/null)
+if [ "$logged" = "echo hello world" ]; then
+    pass "the -c log records the whole command line"
+else
+    fail "the -c log records the whole command line (got '$logged')"
+fi
+
+echo "=== session environment (pty)"
+reset_logs
+write_conf "$T/logs" "clearenvironment = false"
+foo=$(FOO=visible python3 "$PTY" envshow "$SUDOSH" | sed -n 's/^FOO=//p')
+if [ "$foo" = visible ]; then
+    pass "clearenvironment = false keeps the caller's environment"
+else
+    fail "clearenvironment = false keeps the caller's environment (FOO='$foo')"
+fi
+reset_logs
+foo=$(FOO=visible python3 "$PTY" envshow "$SUDOSH" | sed -n 's/^FOO=//p')
+if [ -z "$foo" ]; then
+    pass "the environment is cleared by default"
+else
+    fail "the environment is cleared by default (FOO='$foo')"
+fi
+reset_logs
+sess_user=$(USER=someone-else python3 "$PTY" envshow "$SUDOSH" | sed -n 's/^USER=//p')
+if [ "$sess_user" = "$ME" ]; then
+    pass "the session environment sets USER to the user being logged in as"
+else
+    fail "the session environment sets USER to the user being logged in as (USER='$sess_user', expected $ME)"
+fi
+reset_logs
+fds=$( (exec 150>/dev/null; python3 "$PTY" fds "$SUDOSH") | sed -n 's/^FDS=//p')
+if [ -n "$fds" ] && ! echo " $fds " | grep -q ' 150 '; then
+    pass "a high-numbered inherited descriptor is not passed to the session shell"
+else
+    fail "a high-numbered inherited descriptor is not passed to the session shell (shell holds: $fds)"
+fi
+
 echo "=== session signal and exit handling (pty)"
 reset_logs
 out=$(python3 "$PTY" sigterm "$SUDOSH")
@@ -118,6 +161,14 @@ if [ "${out%% *}" = EXITED ] && [ "$(script_mode)" = 440 ]; then
     pass "SIGTERM ends the session and closes logs"
 else
     fail "SIGTERM ends the session and closes logs (got $out, mode $(script_mode))"
+fi
+
+reset_logs
+out=$(python3 "$PTY" sighup "$SUDOSH")
+if [ "${out%% *}" = EXITED ] && [ "$(script_mode)" = 440 ]; then
+    pass "a dropped connection (SIGHUP) ends the session and closes logs"
+else
+    fail "a dropped connection (SIGHUP) ends the session and closes logs (got $out, mode $(script_mode))"
 fi
 
 reset_logs
@@ -179,6 +230,43 @@ else
     else
         fail "writes that accept one byte at a time still reach the shell and the log (got $out, $count)"
     fi
+
+    reset_logs
+    write_conf "$T/logs" "-cargallow = echo"
+    LD_PRELOAD="$PRELOAD" REGRESS_EXECL_FAIL=1 "$SUDOSH" -c 'echo hi' >"$T/out" 2>"$T/err"
+    rc=$?
+    if [ "$rc" -ne 0 ] && grep -q 'cannot run' "$T/err"; then
+        pass "-c reports a failure to run the command"
+    else
+        fail "-c reports a failure to run the command (exit $rc)"
+    fi
+
+    reset_logs
+    write_conf "$T/logs" "-cargallow = echo"
+    LD_PRELOAD="$PRELOAD" REGRESS_NOW=2147483748 "$SUDOSH" -c 'echo hi' >/dev/null 2>&1
+    if ls "$T/logs" | grep -q -- '-interactive-2147483748-'; then
+        pass "log file names keep a positive timestamp after 2038"
+    else
+        fail "log file names keep a positive timestamp after 2038 ($(ls "$T/logs" | tr '\n' ' '))"
+    fi
+
+    reset_logs
+    rm -f "$T/syslog.log"
+    out=$(REGRESS_SYSLOG_LOG="$T/syslog.log" REGRESS_PRELOAD="$PRELOAD" REGRESS_SHELL=/nonexistent/sh \
+        python3 "$PTY" wait "$SUDOSH")
+    if [ "$out" = "EXITED 1" ] && [ ! -s "$T/syslog.log" ]; then
+        pass "an invalid shell is refused without logging when syslog is not configured"
+    else
+        fail "an invalid shell is refused without logging when syslog is not configured (got $out, log: $(cat "$T/syslog.log" 2>/dev/null))"
+    fi
+
+    reset_logs
+    out=$(REGRESS_PRELOAD="$PRELOAD" REGRESS_PTSNAME_FAIL=1 python3 "$PTY" wait "$SUDOSH")
+    if [ "$out" = "EXITED 1" ]; then
+        pass "a failure to name the session terminal ends sudosh cleanly"
+    else
+        fail "a failure to name the session terminal ends sudosh cleanly (got $out)"
+    fi
 fi
 
 echo "=== input recording (--enable-recordinput build)"
@@ -198,8 +286,8 @@ else
 fi
 
 echo "=== replay"
-mk_time() { printf '%s' "$1" > "$T/logs/alice-root-time-1700000000-ABCDEFGHIJKLMNOP"; }
-mk_script() { printf '%s' "$1" > "$T/logs/alice-root-script-1700000000-ABCDEFGHIJKLMNOP"; }
+mk_time() { printf '%s' "$1" > "$T/logs/alice-$ME-time-1700000000-ABCDEFGHIJKLMNOP"; }
+mk_script() { printf '%s' "$1" > "$T/logs/alice-$ME-script-1700000000-ABCDEFGHIJKLMNOP"; }
 
 reset_logs
 mk_script "$(head -c 100000 /dev/zero | tr '\0' A)"
@@ -250,9 +338,9 @@ else
 fi
 
 reset_logs
-printf 'ls -l\n' > "$T/logs/alice-root-interactive-1700000003-AAAAAAAAAAAAAAAA"
-printf 'secret\n' > "$T/logs/alice-root-interactive-1700000004-BBBBBBBBBBBBBBBB"
-chmod 000 "$T/logs/alice-root-interactive-1700000004-BBBBBBBBBBBBBBBB"
+printf 'ls -l\n' > "$T/logs/alice-$ME-interactive-1700000003-AAAAAAAAAAAAAAAA"
+printf 'secret\n' > "$T/logs/alice-$ME-interactive-1700000004-BBBBBBBBBBBBBBBB"
+chmod 000 "$T/logs/alice-$ME-interactive-1700000004-BBBBBBBBBBBBBBBB"
 if [ "$(id -u)" -eq 0 ]; then
     echo "SKIP: running as root, unreadable-file test needs a normal user"
 else
@@ -266,13 +354,95 @@ else
 fi
 
 reset_logs
-printf 'x' > "$T/logs/alice-root-input-1700000005-CCCCCCCCCCCCCCCC"
+printf 'x' > "$T/logs/alice-$ME-input-1700000005-CCCCCCCCCCCCCCCC"
 "$REPLAY" >"$T/out" 2>"$T/err"
 rc=$?
 if [ "$rc" -eq 0 ] && ! grep -q 'missing script' "$T/err"; then
     pass "a lone input file does not create a session"
 else
     fail "a lone input file does not create a session (exit $rc)"
+fi
+
+echo "=== forged and malformed log files"
+reset_logs
+touch "$T/logs/forge-$ME-script-99999999999999999-AAAA"
+timeout 10 "$REPLAY" >"$T/out" 2>"$T/err"
+rc=$?
+if [ "$rc" -eq 0 ] && grep -q '(bad date)' "$T/out"; then
+    pass "a file name with an out-of-range timestamp does not crash the listing"
+else
+    fail "a file name with an out-of-range timestamp does not crash the listing (exit $rc)"
+fi
+
+reset_logs
+printf 'real\n' > "$T/logs/good-$ME-script-1700000000-GGGG"
+printf '0.1 4\n' > "$T/logs/good-$ME-time-1700000000-GGGG"
+printf 'garbage\n' > "$T/logs/evil-$ME-time-1-AAAA"
+"$REPLAY" >"$T/out" 2>"$T/err"
+rc=$?
+if [ "$rc" -eq 0 ] && grep -q "good-$ME-1700000000-GGGG" "$T/out"; then
+    pass "one malformed time file does not hide the other sessions"
+else
+    fail "one malformed time file does not hide the other sessions (exit $rc)"
+fi
+
+reset_logs
+printf 'real\n' > "$T/logs/good-$ME-script-1700000000-GGGG"
+mkfifo "$T/logs/fifo-$ME-time-1-AAAA"
+ln -s /etc/passwd "$T/logs/link-$ME-script-1-AAAA"
+timeout 10 "$REPLAY" >"$T/out" 2>"$T/err"
+rc=$?
+if [ "$rc" -eq 0 ] && grep -q "good-$ME-1700000000-GGGG" "$T/out" && ! grep -q 'fifo-\|link-' "$T/out"; then
+    pass "a planted FIFO or symlink is skipped instead of hanging or being followed"
+else
+    fail "a planted FIFO or symlink is skipped instead of hanging or being followed (exit $rc)"
+fi
+
+reset_logs
+printf 'forged\n' > "$T/logs/forge-root-script-1700000000-FFFF"
+printf 'real\n' > "$T/logs/good-$ME-script-1700000000-GGGG"
+if [ "$(id -u)" -eq 0 ]; then
+    echo "SKIP: running as root, the forged-owner test needs a normal user"
+else
+    "$REPLAY" >"$T/out" 2>"$T/err"
+    rc=$?
+    if [ "$rc" -eq 0 ] && grep -q "good-$ME-1700000000-GGGG" "$T/out" && ! grep -q 'forge-root' "$T/out"; then
+        pass "a file not owned by the user in its name is ignored"
+    else
+        fail "a file not owned by the user in its name is ignored (exit $rc)"
+    fi
+fi
+
+reset_logs
+printf '\033]0;INJECTED\007\033[2Jboo\n' > "$T/logs/forged-$ME-interactive-1700000000-AAAA"
+"$REPLAY" >"$T/out" 2>"$T/err"
+if [ "$(tr -d -c '\033' < "$T/out" | wc -c)" -eq 0 ] && grep -q 'INJECTED' "$T/out"; then
+    pass "control characters in a log header are not sent to the terminal"
+else
+    fail "control characters in a log header are not sent to the terminal"
+fi
+
+reset_logs
+mk_script "$(head -c 20 /dev/zero | tr '\0' x)"
+mk_time "$(for i in $(seq 20); do echo '0.090000 1'; done)"
+start=$(date +%s%N)
+"$REPLAY" "$ID" >/dev/null 2>&1
+end=$(date +%s%N)
+ms=$(( (end - start) / 1000000 ))
+if [ "$ms" -ge 1500 ] && [ "$ms" -lt 4000 ]; then
+    pass "short pauses are replayed at their recorded length (${ms}ms for 1.8s)"
+else
+    fail "short pauses are replayed at their recorded length (took ${ms}ms, expected about 1800)"
+fi
+
+reset_logs
+printf 'ab\0cd' > "$T/logs/alice-$ME-script-1700000000-ABCDEFGHIJKLMNOP"
+printf '0.01 5\n' > "$T/logs/alice-$ME-time-1700000000-ABCDEFGHIJKLMNOP"
+size=$("$REPLAY" "$ID" 2>/dev/null | wc -c)
+if [ "$size" -eq 5 ]; then
+    pass "a recorded chunk containing a NUL byte is replayed in full"
+else
+    fail "a recorded chunk containing a NUL byte is replayed in full (got $size bytes of 5)"
 fi
 
 echo "=== random session suffix"
@@ -297,16 +467,23 @@ int main(void)
         }
         distinct_total += distinct;
     }
-    printf("%.2f %d\n", (double)distinct_total / samples, bad);
+    printf("%.2f %d %s\n", (double)distinct_total / samples, bad, rand2str(16));
     return 0;
 }
 EOF
 if gcc -Wall -I"$T/main" -o "$T/randtest" "$T/randtest.c" "$T/main/src/rand.c" 2>"$T/rand.build.log"; then
-    read -r avg bad < <("$T/randtest")
+    read -r avg bad _ < <("$T/randtest")
     if [ "$bad" -eq 0 ] && awk -v a="$avg" 'BEGIN { exit !(a >= 13) }'; then
         pass "random suffix uses distinct characters (avg $avg distinct of 16)"
     else
         fail "random suffix uses distinct characters (avg $avg distinct of 16)"
+    fi
+    a=$(LD_PRELOAD="$PRELOAD" REGRESS_FROZEN_CLOCK=1 "$T/randtest")
+    b=$(LD_PRELOAD="$PRELOAD" REGRESS_FROZEN_CLOCK=1 "$T/randtest")
+    if [ "$a" != "$b" ]; then
+        pass "the session suffix does not depend on the clock and pid alone"
+    else
+        fail "the session suffix does not depend on the clock and pid alone (both runs gave: $a)"
     fi
 else
     fail "random suffix test build (see $T/rand.build.log)"
@@ -345,6 +522,16 @@ if [ "$rc" -ne 0 ] && [ "$mode" = 644 ]; then
     pass "a non-directory logdir is refused and left alone"
 else
     fail "a non-directory logdir is refused and left alone (exit $rc, mode $mode)"
+fi
+
+echo "=== configuration comments"
+rm -rf "$T/cmtlogs" "$T"/cmtlogs#*
+write_conf "$T/cmtlogs # where recordings go"
+"$REPLAY" >/dev/null 2>&1
+if [ -d "$T/cmtlogs" ] && ! ls "$T" | grep -q 'cmtlogs#'; then
+    pass "an inline # comment is not part of the value"
+else
+    fail "an inline # comment is not part of the value ($(ls "$T" | grep cmtlogs | tr '\n' ' '))"
 fi
 
 echo "=== configuration validation"

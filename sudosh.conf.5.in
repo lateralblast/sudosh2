@@ -8,6 +8,7 @@ sudosh.conf \- configuration file for sudosh
 .SH DESCRIPTION
 .B sudosh.conf
 is used to configure sudosh.  The log directory, logging parameters and other default entries are stored within this file.
+A \fB#\fR starts a comment that runs to the end of the line, on its own line or after a value. White space is ignored, so values cannot contain spaces or a \fB#\fR.
 .SH OPTIONS
 .IP logdir
 .RS
@@ -46,7 +47,9 @@ Use this option to set which syslog facility sudosh will use.  The default is LO
 .IP "-c arg allow"
 .RS
 -c arg allow = command
-This option can be used multiple times. A command is allowed when its first word matches an entry. The entries are stored in a fixed buffer of about 8 KB in total; sudosh refuses to start if they do not fit.  If you wish to use sudosh as a default login shell and want to allow users to copy files, you can allow them to use commands such as rsync, scp, and sftp.  For each command you want to allow, use a new line and option. To allow all commands, use the special value of *.
+This option can be used multiple times. A command is allowed when its first word matches an entry. The entries are stored in a fixed buffer of about 8 KB in total; sudosh refuses to start if they do not fit.
+.PP
+\fBWarning:\fR only the command name is checked, not its arguments. A command is run with all the arguments the user gives it (apart from the shell characters \fB; & | < > ` $ ( )\fR and newlines, which are refused unless the list contains \fB*\fR). An allowed program can therefore be used to run other programs or write files if it has options that do so, for example \fBfind -exec\fR and \fBfind -fprint\fR, \fBrsync -e\fR, \fBscp -S\fR and \fBscp -o ProxyCommand=\fR, or \fBtar --to-command\fR. Only allow programs whose options you have reviewed, and treat the list as a convenience, not as a security boundary.  If you wish to use sudosh as a default login shell and want to allow users to copy files, you can allow them to use commands such as rsync, scp, and sftp.  For each command you want to allow, use a new line and option. To allow all commands, use the special value of *.
 .PP
 Note: Modern OpenSSH (9.0+) uses the SFTP protocol by default for scp. If scp or SFTP clients (e.g., WinSCP, FileZilla) fail to connect through sudosh, ensure the sftp-server path is correct and that \fBsftp-server\fR (or \fBinternal-sftp\fR) is available. You may need to add:
 .PP

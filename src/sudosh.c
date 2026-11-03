@@ -91,6 +91,7 @@ struct s_user {
   struct s_env mail;
   struct s_env shell;
   struct s_env logname;
+  struct s_env username;
   struct passwd *pw;
 };
 
@@ -234,10 +235,12 @@ int main(int argc, char *argv[], char *environ[]) {
           strchr(sudosh_option.argallow, '*') != NULL) {
         FILE *f;
         int fd;
+        char logline[BUFSIZ];
+        char *q;
         snprintf(script.name, (size_t)BUFSIZ - 1,
-                 "%.1024s/%.128s%c%.128s%cinteractive%c%i%c%.128s",
+                 "%.1024s/%.128s%c%.128s%cinteractive%c%ld%c%.128s",
                  sudosh_option.logdir, user.from, sudosh_option.fdl, user.to,
-                 sudosh_option.fdl, sudosh_option.fdl, (int)now,
+                 sudosh_option.fdl, sudosh_option.fdl, (long)now,
                  sudosh_option.fdl, rand);
 
         /* O_EXCL: never write through an existing file or symlink. */
@@ -251,11 +254,21 @@ int main(int argc, char *argv[], char *environ[]) {
           exit(EXIT_FAILURE);
         }
 
-        fprintf(f, "%.256s\n", c_str);
+        /* Record the whole command line, not just its first word. A copy is
+         * logged because c_command is still run below; a newline (possible
+         * when * allows everything) would end the one-line log header. */
+        snprintf(logline, sizeof(logline), "%.1024s", c_command);
+        for (q = logline; *q != '\0'; q++)
+          if (*q == '\n' || *q == '\r')
+            *q = ' ';
+        fprintf(f, "%s\n", logline);
         fclose(f);
 
         execl("/bin/sh", "sh", "-c", c_command, (char *)0);
-        exit(EXIT_SUCCESS);
+        /* execl only returns on failure; do not report success. */
+        fprintf(stderr, "%s: cannot run /bin/sh: %s\n", progname,
+                strerror(errno));
+        exit(127);
         break;
       } else {
         fprintf(stderr, "\"%s\" isn't allowed to be executed.\n", c_str);
@@ -327,6 +340,14 @@ int main(int argc, char *argv[], char *environ[]) {
   if ((user.shell.ptr = getenv("SHELL")) == NULL)
     user.shell.ptr = user.pw->pw_shell;
 
+  /* Without a shell there is nothing to compare, and strcmp() would crash. */
+  if (user.shell.ptr == NULL) {
+    fprintf(stderr, "Could not determine a valid shell.\n");
+    if (sudosh_option.priority != -1)
+      mysyslog(sudosh_option.priority, "Could not determine a valid shell");
+    exit(EXIT_FAILURE);
+  }
+
   /* check against /etc/shells to make sure it's a real shell */
   setusershell();
   while ((user.vshell = (char *)getusershell()) != (char *)0) {
@@ -343,8 +364,9 @@ int main(int argc, char *argv[], char *environ[]) {
       exit(EXIT_FAILURE);
     } else {
       fprintf(stderr, "%s is not in /etc/shells\n", user.shell.ptr);
-      mysyslog(sudosh_option.priority, "%s,%s: %s is not in /etc/shells",
-               user.from, ttyname(0), user.shell.ptr);
+      if (sudosh_option.priority != -1)
+        mysyslog(sudosh_option.priority, "%s,%s: %s is not in /etc/shells",
+                 user.from, ttyname(0), user.shell.ptr);
       exit(EXIT_FAILURE);
     }
   }
@@ -364,18 +386,18 @@ int main(int argc, char *argv[], char *environ[]) {
     user.shell.ptr = sudosh_option.defshell;
 
   snprintf(script.name, (size_t)BUFSIZ - 1,
-           "%.1024s/%.128s%c%.128s%cscript%c%i%c%.128s", sudosh_option.logdir,
+           "%.1024s/%.128s%c%.128s%cscript%c%ld%c%.128s", sudosh_option.logdir,
            user.from, sudosh_option.fdl, user.to, sudosh_option.fdl,
-           sudosh_option.fdl, (int)now, sudosh_option.fdl, rand);
+           sudosh_option.fdl, (long)now, sudosh_option.fdl, rand);
   snprintf(timing.name, (size_t)BUFSIZ - 1,
-           "%.1024s/%.128s%c%.128s%ctime%c%i%c%.128s", sudosh_option.logdir,
+           "%.1024s/%.128s%c%.128s%ctime%c%ld%c%.128s", sudosh_option.logdir,
            user.from, sudosh_option.fdl, user.to, sudosh_option.fdl,
-           sudosh_option.fdl, (int)now, sudosh_option.fdl, rand);
+           sudosh_option.fdl, (long)now, sudosh_option.fdl, rand);
 #ifdef RECORDINPUT
   snprintf(input.name, (size_t)BUFSIZ - 1,
-           "%.1024s/%.128s%c%.128s%cinput%c%i%c%.128s", sudosh_option.logdir,
+           "%.1024s/%.128s%c%.128s%cinput%c%ld%c%.128s", sudosh_option.logdir,
            user.from, sudosh_option.fdl, user.to, sudosh_option.fdl,
-           sudosh_option.fdl, (int)now, sudosh_option.fdl, rand);
+           sudosh_option.fdl, (long)now, sudosh_option.fdl, rand);
 #endif
   snprintf(start_msg, BUFSIZ - 1,
            "starting session for %.128s as %.128s, tty %.128s, shell %.128s",
@@ -426,6 +448,14 @@ int main(int argc, char *argv[], char *environ[]) {
   memset(&sachild, 0, sizeof sachild);
   sachild.sa_handler = on_stop;
   sigaction(SIGCHLD, &sachild, (struct sigaction *)0);
+
+  /* A dropped connection (SIGHUP) or a kill must still finish the logs, so
+   * handle them like SIGTERM. SIGPIPE is ignored so that a closed terminal
+   * shows up as a write error, which also ends the session cleanly. */
+  sigaction(SIGHUP, &saterm, (struct sigaction *)0);
+  sigaction(SIGINT, &saterm, (struct sigaction *)0);
+  sigaction(SIGQUIT, &saterm, (struct sigaction *)0);
+  signal(SIGPIPE, SIG_IGN);
 
   gettimeofday(&tv, NULL);
   oldtime = tv.tv_sec + (double)tv.tv_usec / 1000000;
@@ -528,6 +558,12 @@ static int findms(struct pst *p) {
 
   sname = (char *)ptsname(p->mfd);
 
+  if (sname == NULL) {
+    perror("ptsname");
+    close(p->mfd);
+    return -1;
+  }
+
   if ((p->sfd = open(sname, O_RDWR)) == -1) {
     perror("open slave pty");
     close(p->mfd);
@@ -561,7 +597,8 @@ static void prepchild(struct pst *pst) {
   char *b = NULL;
   char newargv[BUFSIZ];
   char *env_list[] = {user.term.str,    user.home.str, user.shell.str,
-                      user.logname.str, user.path.str, NULL};
+                      user.logname.str, user.path.str, user.username.str,
+                      NULL};
 
   close(0);
   close(1);
@@ -576,8 +613,15 @@ static void prepchild(struct pst *pst) {
     exit(EXIT_FAILURE);
   i = dup(0);
   i = dup(0);
-  for (i = 3; i < 100; ++i)
-    close(i);
+  /* Close every inherited descriptor, not just the first hundred. */
+  {
+    long maxfd = sysconf(_SC_OPEN_MAX);
+
+    if (maxfd < 0 || maxfd > 65536)
+      maxfd = 65536;
+    for (i = 3; i < maxfd; ++i)
+      close(i);
+  }
 
 #ifdef TCSETS
   (void)ioctl(0, TCSETS, &termorig);
@@ -597,6 +641,7 @@ static void prepchild(struct pst *pst) {
 
   snprintf(user.shell.str, BUFSIZ - 1, "SHELL=%s", user.shell.ptr);
   snprintf(user.logname.str, BUFSIZ - 1, "LOGNAME=%.128s", user.to);
+  snprintf(user.username.str, BUFSIZ - 1, "USER=%.128s", user.to);
   if (!strcmp(user.to, "root"))
     snprintf(user.path.str, BUFSIZ - 1, "PATH=/sbin:/bin:/usr/sbin:/usr/bin");
   else
@@ -637,7 +682,10 @@ static void rawmode(int ttyfd) {
     exit(EXIT_FAILURE);
   }
 
-  termnew.c_cc[VEOF] = 1;
+  /* Non-canonical mode: return as soon as one byte is available. VMIN is
+   * not the same slot as VEOF on every system (it is on Linux). */
+  termnew.c_cc[VMIN] = 1;
+  termnew.c_cc[VTIME] = 0;
   termnew.c_iflag = BRKINT | IXON | IXANY;
   termnew.c_oflag = 0;
   termnew.c_cflag = termorig.c_cflag;
@@ -675,7 +723,7 @@ static void bye(int signum) {
   if (sudosh_option.priority != -1)
     mysyslog(sudosh_option.priority,
              "stopping session for %s as %s, tty %s, shell %s", user.from,
-             user.to, ttyname(0), user.shell.ptr);
+             user.to, ttyname(0) != NULL ? ttyname(0) : "(none)", user.shell.ptr);
   if (signum == SIGCHLD)
     exit(0);
   exit(signum);
@@ -724,7 +772,8 @@ int do_write(int fd, void *buf, size_t size, char *file, unsigned int line) {
       snprintf(str, BUFSIZ - 1, "%s [%s, line %i]: %s\n", progname, file, line,
                strerror(errno));
       perror(str);
-      exit(EXIT_FAILURE);
+      /* Finish the session properly so the logs are closed and sealed. */
+      bye(EXIT_FAILURE);
     }
     done += (size_t)s;
   }

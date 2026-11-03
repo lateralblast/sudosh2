@@ -63,6 +63,83 @@ has_suffix (const char *name, const char *suffix)
   return nl >= sl && strcmp (name + nl - sl, suffix) == 0;
 }
 
+/* A copy of S that is safe to show on a terminal. File names and headers can
+ * come from a forged file, so control characters (which could carry escape
+ * sequences) become '?'. A few buffers are used in rotation so that one call
+ * can show several of these strings. */
+static const char *
+printable (const char *s)
+{
+  static char buf[4][BUFSIZ];
+  static unsigned int which = 0;
+  char *d = buf[which++ % 4];
+  size_t i;
+
+  for (i = 0; s[i] != '\0' && i < BUFSIZ - 1; i++)
+    d[i] = ((unsigned char) s[i] < 0x20 || (unsigned char) s[i] == 0x7f)
+      ? '?' : s[i];
+  d[i] = '\0';
+  return d;
+}
+
+/* True if NAME in the log directory is a regular file. The directory is
+ * writable by everyone, so something else may have been put there: opening a
+ * FIFO would block forever, and a device or symlink is never something sudosh
+ * wrote. Directories are skipped without comment. */
+static int
+is_regular_file (const char *name)
+{
+  char path[BUFSIZ];
+  struct stat st;
+
+  snprintf (path, sizeof (path), "%.1024s/%s", config_option.logdir, name);
+  if (lstat (path, &st) == -1)
+    return 0;
+  if (S_ISDIR (st.st_mode))
+    return 0;
+  if (!S_ISREG (st.st_mode))
+    {
+      fprintf (stderr, "[warning]: skipping %s: not a regular file\n", printable (name));
+      return 0;
+    }
+  return 1;
+}
+
+/* True if the file NAME was written by the user named TO. sudosh runs as the
+ * user it records, so a genuine recording is owned by that user (or by root,
+ * for a setuid install). Anyone can create files in the log directory, so a
+ * file owned by somebody else is a forgery. A user that does not exist on this
+ * system cannot be checked, and is accepted. */
+static int
+owner_matches (const char *name, const char *to)
+{
+  char path[BUFSIZ];
+  struct stat st;
+  struct passwd *pw;
+
+  snprintf (path, sizeof (path), "%.1024s/%s", config_option.logdir, name);
+  if (lstat (path, &st) == -1)
+    return 0;
+  pw = getpwnam (to);
+  if (pw == (struct passwd *) 0 || st.st_uid == 0 || st.st_uid == pw->pw_uid)
+    return 1;
+  fprintf (stderr, "[warning]: skipping %s: not owned by %s\n", printable (name), printable (to));
+  return 0;
+}
+
+/* Format E as a date. localtime() returns NULL for a timestamp it cannot
+ * represent, which a forged file name can supply, so fall back to a
+ * placeholder instead of passing NULL to strftime(). */
+static void
+format_date (char *dst, size_t size, time_t e)
+{
+  struct tm *tm = localtime (&e);
+
+  if (tm == (struct tm *) 0
+      || strftime (dst, size, "%m/%d/%Y %H:%M:%S", tm) == 0)
+    snprintf (dst, size, "%s", "(bad date)");
+}
+
 int
 main (int argc, char **argv, char **environ)
 {
@@ -180,10 +257,9 @@ main (int argc, char **argv, char **environ)
       if (strncmp (dirp->d_name, ".", 1) == 0)
 	continue;
 
-#ifdef linux
-      if (dirp->d_type == DT_DIR)
-        continue;
-#endif
+      if (!is_regular_file (dirp->d_name))
+	continue;
+
       if (has_suffix (dirp->d_name, ".gz")
           || has_suffix (dirp->d_name, ".bz2")
           || has_suffix (dirp->d_name, ".xz"))
@@ -192,17 +268,19 @@ main (int argc, char **argv, char **environ)
       if (sscanf (dirp->d_name, match, from, to, type, &e, randstr) != 5)
 	{
 	  LL ();
-	  fprintf (stderr, "[warning]: invalid file: %s\n", dirp->d_name);
+	  fprintf (stderr, "[warning]: invalid file: %s\n", printable (dirp->d_name));
 	  continue;
 	}
 
       if (strcmp (type, "script") && strcmp (type, "time")
 	  && strcmp (type, "interactive") && strcmp (type, "input"))
 	{
-	  fprintf (stderr, "[warning]: invalid type (%s): %s\n", type,
-		   dirp->d_name);
+	  fprintf (stderr, "[warning]: invalid type (%s): %s\n", printable (type), printable (dirp->d_name));
 	  continue;
 	}
+
+      if (!owner_matches (dirp->d_name, to))
+	continue;
 
       if (!strcmp (type, "interactive"))
 	{
@@ -221,13 +299,12 @@ main (int argc, char **argv, char **environ)
 	    {
 	      /* One unreadable log should not hide the rest of the list. */
 	      fprintf (stderr, "[warning]: skipping %.100s: %.100s (%i)\n",
-		       s->script.str, strerror (errno), errno);
-	      free (s);
+		       printable (s->script.str), strerror (errno), errno); free (s);
 	      continue;
 	    }
 
 	  if (fgets (s->id, BUFSIZ - 1, f) == NULL)
-	    fprintf (stderr, "Bad header in %s\n", s->script.str);
+	    fprintf (stderr, "Bad header in %s\n", printable (s->script.str));
 	  else
 	    {
 	      ptr = strchr (s->id, '\n');
@@ -238,7 +315,7 @@ main (int argc, char **argv, char **environ)
 	      snprintf (s->to, BUFSIZ, "%s", to);
 	      snprintf (s->type, BUFSIZ, "%s", type);
 	      snprintf (s->randstr, BUFSIZ, "%s", randstr);
-	      strftime (s->date, 20, "%m/%d/%Y %H:%M:%S", localtime (&s->e));
+	      format_date (s->date, 20, s->e);
 	      link_session (s);
 	    }
 	  fclose (f);
@@ -271,7 +348,7 @@ main (int argc, char **argv, char **environ)
 	  snprintf (s->to, BUFSIZ, "%s", to);
 	  snprintf (s->type, BUFSIZ, "%s", type);
 	  snprintf (s->randstr, BUFSIZ, "%s", randstr);
-	  strftime (s->date, 20, "%m/%d/%Y %H:%M:%S", localtime (&s->e));
+	  format_date (s->date, 20, s->e);
 	  snprintf (s->id, BUFSIZ - 1, "%.128s%c%.128s%c%ld%c%.128s", s->from,
 		    config_option.fdl, s->to, config_option.fdl, s->e,
 		    config_option.fdl, s->randstr);
@@ -350,8 +427,7 @@ main (int argc, char **argv, char **environ)
 	  if (f_script == (FILE *) 0)
 	    {
 	      LL ();
-	      fprintf (stderr, "%s: %s: %s (%i)\n", progname,
-		       s->script.str, strerror (errno), errno);
+	      fprintf (stderr, "%s: %s: %s (%i)\n", progname, printable (s->script.str), strerror (errno), errno);
 	      exit (EXIT_FAILURE);
 	    }
 
@@ -389,24 +465,23 @@ main (int argc, char **argv, char **environ)
 	  LL ();
 	  fprintf (stderr,
 		   "[error]: session %s is missing script information.\n",
-		   scan->id);
-	  continue;
+		   printable (scan->id)); continue;
 	}
       close (scan->script.fd);
 
       if (!strcmp (scan->type, "interactive"))
 	fprintf (stdout, "%-19s %-8s %-12s %-12s %s\n", scan->date,
-		 "-c arg", scan->from, scan->to, scan->id);
+		 "-c arg", printable (scan->from), printable (scan->to), printable (scan->id));
       else
 	fprintf (stdout, "%-19s %-8s %-12s %-12s %s\n", scan->date,
-		 int2smalltime (scan->secs), scan->from, scan->to, scan->id);
+		 int2smalltime (scan->secs), printable (scan->from), printable (scan->to), printable (scan->id));
       last = scan;
     }
 
   if (s_top && last)
     fprintf (stderr, "\nUsage: %s ID [MULTIPLIER] [MAXWAIT]\n"
 	     "See '%s -h' for more help.\n"
-	     "Example: %s %s 1 2\n", progname, progname, progname, last->id);
+	     "Example: %s %s 1 2\n", progname, progname, progname, printable (last->id));
   else
     fprintf (stderr, "\nUsage: %s ID [MULTIPLIER] [MAXWAIT]\n"
 	     "See '%s -h' for more help.\n", progname, progname);
@@ -422,7 +497,6 @@ replay (const char *time, const char *script, int div, int maxwait)
   float ftime = 0;
   int b = 0;
   int r = 0;
-  int sec, usec;
   char buffer[BUFSIZ];
   struct s_file s_time;
   struct s_file s_script;
@@ -439,16 +513,14 @@ replay (const char *time, const char *script, int div, int maxwait)
   if (s_time.f == (FILE *) 0)
     {
       LL ();
-      fprintf (stderr, "%s: %s: %s (%i)\n", progname, time,
-	       strerror (errno), errno);
+      fprintf (stderr, "%s: %s: %s (%i)\n", progname, printable (time), strerror (errno), errno);
       exit (EXIT_FAILURE);
     }
 
   if ((s_script.fd = open (script, O_RDONLY)) == -1)
     {
       LL ();
-      fprintf (stderr, "%s: %s: %s (%i)\n", progname, script,
-	       strerror (errno), errno);
+      fprintf (stderr, "%s: %s: %s (%i)\n", progname, printable (script), strerror (errno), errno);
       exit (EXIT_FAILURE);
     }
 
@@ -477,18 +549,13 @@ replay (const char *time, const char *script, int div, int maxwait)
       if (ftime > maxwait)
         ftime = maxwait;
 
-      snprintf (timebuf, BUFSIZ - 1, "%f", ftime);
-
-      if (sscanf (timebuf, "%i.%i", &sec, &usec) != 2)
-	{
-	  LL ();
-	  fprintf (stderr, "[error]: line %i: invalid float (!= %%i.%%i)\n",
-		   s_time.line);
-	  exit (EXIT_FAILURE);
-	}
-
-      tv.tv_sec = (time_t) sec;
-      tv.tv_usec = (time_t) usec;
+      /* Split the delay into seconds and microseconds directly. Printing it
+       * and reading it back with %i treated a leading zero as octal, so a
+       * pause of 0.09 s became 0. */
+      if (!(ftime > 0))
+	ftime = 0;
+      tv.tv_sec = (time_t) ftime;
+      tv.tv_usec = (long) ((ftime - (float) tv.tv_sec) * 1000000.0f);
 
       /* Older sudosh wrote -1 when the pty read failed at the end of a
        * session. Those entries carry no data to replay. */
@@ -517,7 +584,7 @@ replay (const char *time, const char *script, int div, int maxwait)
 	}
 
       select (0, (fd_set *) 0, (fd_set *) 0, (fd_set *) 0, &tv);
-      fputs (read_buffer, stdout);
+      fwrite (read_buffer, 1, (size_t) b, stdout);
       fflush (stdout);
       memset (read_buffer, '\0', BUFSIZ);
     }
@@ -695,13 +762,16 @@ count_dur (session * s)
   char buffer[BUFSIZ];
   float t_time = 0;
 
+  /* One unreadable or malformed time file must not stop the whole listing,
+   * so report it and leave the duration at 0. */
+  s->secs = 0;
   s_time.f = fopen (s->time.str, "r");
 
   if (s_time.f == (FILE *) 0)
     {
-      LL ();
-      fprintf (stderr, "%s: %s (%i)\n", s->time.str, strerror (errno), errno);
-      exit (EXIT_FAILURE);
+      fprintf (stderr, "[warning]: no duration for %s: %s (%i)\n", printable (s->time.str),
+	       strerror (errno), errno);
+      return;
     }
 
   for (s_time.line = 1; fgets (buffer, BUFSIZ - 1, s_time.f); s_time.line++)
@@ -710,26 +780,21 @@ count_dur (session * s)
       float ftime = 0;
       int b = 0;
 
-      if (sscanf (buffer, "%s %i\n", (char *) &time, &b) != 2)
-	{			/* find the two numbers */
-	  LL ();
-	  fprintf (stderr,
-		   "[error]: file %s, line %i: invalid timing information ('%s' != %%f %%i\\n)\n",
-		   s->time.str, s_time.line, buffer);
-	  exit (EXIT_FAILURE);
-	}
-
-      if (sscanf (time, "%f", &ftime) != 1)
+      if (sscanf (buffer, "%s %i\n", (char *) &time, &b) != 2
+	  || sscanf (time, "%f", &ftime) != 1)
 	{
-	  LL ();
-	  fprintf (stderr, "[error]: line %i: invalid float (!= %%f)\n",
-		   s_time.line);
-	  exit (EXIT_FAILURE);
+	  fprintf (stderr, "[warning]: no duration for %s: line %i is not valid timing information\n",
+		   printable (s->time.str), s_time.line); fclose (s_time.f);
+	  return;
 	}
 
-      t_time += ftime;
+      if (ftime > 0)
+	t_time += ftime;
     }
 
+  /* The duration is shown as an int number of seconds. */
+  if (!(t_time < 2147483647.0f))
+    t_time = 2147483647.0f;
   s->secs = (long) t_time;
   fclose (s_time.f);
 }

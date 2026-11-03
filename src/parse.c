@@ -4,6 +4,7 @@
 extern void parse(option *, const char *);
 extern void mklogdir(char *logdir);
 extern void validateLogdir(char *logdir);
+extern void lc(char *str);
 
 /* Append C to the string S, which has room for SIZE bytes including the
  * terminating NUL. Characters that do not fit are dropped. */
@@ -64,7 +65,9 @@ void parse(option *c, const char *file)
 			continue; // Ignore comments, blank lines
 		// Trim the whitespace, split into key/value
 		for (x = 0; x < strlen(line); x++)
-			if (!isspace(line[x]))
+			if (line[x] == '#')
+				break; /* a comment runs to the end of the line */
+			else if (!isspace((unsigned char)line[x]))
 			{
 				if (line[x] == '=')
 				{
@@ -95,10 +98,12 @@ void parse(option *c, const char *file)
 			strcpy(c->logdir, value);
 		if (strcmp(key, "clearenvironment") == 0)
 		{
-			if (strncmp(value, "no", 2) == 0)
-			{
+			/* "no..." was always accepted; the man page also says false. */
+			lc(value);
+			if (strncmp(value, "no", 2) == 0 || strcmp(value, "false") == 0 ||
+				strcmp(value, "off") == 0 || strcmp(value, "0") == 0 ||
+				strcmp(value, "disabled") == 0)
 				c->clearenvironment = 0;
-			}
 			else
 				c->clearenvironment = 1;
 		}
