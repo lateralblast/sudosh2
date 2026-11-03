@@ -26,3 +26,10 @@ ls -l ../*.deb
 ls -l ../*.deb
 -rw-r--r-- 1 root root 30628 Aug 13 15:24 ../sudosh2_2.0.1-1_amd64.deb
 ```
+
+Fix for autoconf errors:
+
+```
+autoreconf -fi && ./configure && make
+
+```
